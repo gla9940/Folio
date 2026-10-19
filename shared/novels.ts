@@ -1,8 +1,3 @@
-export const TRANSLATION_MODEL = 'gemini-3.8-flash';
-export const TRANSLATION_VERSION = 'folio-literary-ko-v1';
-export const GLOSSARY_VERSION = 'rezero-ko-v1';
-// Request-only revision: do not invalidate successful translations or change batch boundaries.
-export const TRANSLATION_REQUEST_VERSION = 'simple-schema-v1';
 export interface SourceParagraph { id: string; text: string }
 export interface NovelSource {
   url: string;
@@ -22,49 +17,10 @@ export interface ImportedNovel {
   paragraphs: SourceParagraph[];
   collection?: { id: string; title: string; author: string; order: number };
 }
-export interface TranslationBatch {
-  id: string;
-  paragraphs: SourceParagraph[];
-  before: SourceParagraph[];
-  after: SourceParagraph[];
-}
-export interface TranslationRequest extends TranslationBatch {
-  sourceHash: string;
-  previousTranslation?: SourceParagraph[];
-}
-export interface TranslationChunk {
-  id: string;
-  status: 'pending' | 'complete' | 'error';
-  paragraphs: SourceParagraph[];
-  error?: string;
-  errorCode?: string;
-  retryable?: boolean;
-  failureVersion?: string;
-  retryAt?: number;
-  diagnosticId?: string;
-}
-export interface TranslationCache {
-  key: string;
-  novelId: string;
-  sourceUrl: string;
-  chapterId: string;
-  sourceHash: string;
-  model: string;
-  version: string;
-  glossaryVersion: string;
-  chunks: TranslationChunk[];
-  updatedAt: string;
-}
 export class FolioError extends Error {
   code: string;
   status: number;
-  retryAfter: number;
-  retryable?: boolean;
-  diagnosticId?: string;
-  constructor(code: string, message: string, status = 400, retryAfter = 0, details?: { retryable?: boolean; diagnosticId?: string }) {
-    super(message); this.code = code; this.status = status; this.retryAfter = retryAfter;
-    this.retryable = details?.retryable; this.diagnosticId = details?.diagnosticId;
-  }
+  constructor(code: string, message: string, status = 400) { super(message); this.code = code; this.status = status; }
 }
 export async function sha256(text: string): Promise<string> {
   const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -99,31 +55,4 @@ export async function createNovel(input: { url: string; title: string; texts: st
       ...(input.policy ? { policy: input.policy } : {}),
     },
   };
-}
-export function translationKey(novel: ImportedNovel): string {
-  return JSON.stringify([novel.source.url, novel.chapterId, novel.source.hash, TRANSLATION_MODEL, TRANSLATION_VERSION, GLOSSARY_VERSION]);
-}
-export function makeBatches(paragraphs: SourceParagraph[]): TranslationBatch[] {
-  const batches: TranslationBatch[] = [];
-  let start = 0;
-  while (start < paragraphs.length) {
-    let end = start;
-    let size = 0;
-    while (end < paragraphs.length && end - start < 32 && (end === start || size + paragraphs[end].text.length <= 4000)) size += paragraphs[end++].text.length;
-    batches.push({ id: `chunk-${start}-${end}`, paragraphs: paragraphs.slice(start, end), before: paragraphs.slice(Math.max(0, start - 2), start), after: paragraphs.slice(end, end + 2) });
-    start = end;
-  }
-  return batches;
-}
-export function validateTranslation(expected: SourceParagraph[], output: unknown): SourceParagraph[] {
-  if (!Array.isArray(output) || output.length !== expected.length) throw new FolioError('INVALID_TRANSLATION', '번역 문단 수가 일치하지 않습니다. 이 구간만 다시 시도해 주세요.', 502);
-  return expected.map((paragraph, index) => {
-    const value = output[index] as Partial<SourceParagraph> | null;
-    if (!value || value.id !== paragraph.id || typeof value.text !== 'string' || !value.text.trim() ||
-      value.text.length > paragraph.text.length * 6 + 200 || value.text.length < Math.max(1, paragraph.text.length * .04) ||
-      value.text.split('\n').length !== paragraph.text.split('\n').length) {
-      throw new FolioError('INVALID_TRANSLATION', '번역의 문단 ID·순서·줄바꿈 검증에 실패했습니다. 이 구간만 다시 시도해 주세요.', 502);
-    }
-    return { id: paragraph.id, text: value.text.trim() };
-  });
 }

@@ -1,9 +1,26 @@
 {
   "compilerOptions": {
-    "target": "ES2023", "lib": ["ES2023", "DOM"], "module": "ESNext", "skipLibCheck": true,
-    "moduleResolution": "Bundler", "allowImportingTsExtensions": true, "isolatedModules": true,
-    "verbatimModuleSyntax": true, "moduleDetection": "force", "noEmit": true, "strict": true,
-    "types": ["node"]
+    "target": "ES2023",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "types": [
+      "node"
+    ]
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "server", "api", "shared", "scripts"]
+  "include": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "shared"
+  ]
 }

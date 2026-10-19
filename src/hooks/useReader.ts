@@ -97,14 +97,25 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
     window.addEventListener('pagehide', flush);
     window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
+    const mutationObserver = new MutationObserver((records) => {
+      if (settings.readingMode === 'scroll' && ready.current && records.some((record) => record.type !== 'attributes' || (record.target as Element).closest('[data-reader-text]'))) {
+        pendingPosition.current = latestPosition.current;
+        restoreByCharacter.current = true;
+        ready.current = false;
+        setPositionRequest(latestPosition.current ? { ...latestPosition.current } : null);
+      }
+    });
+    const text = document.getElementById('reader-text');
+    if (text) mutationObserver.observe(text, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
     return () => {
       clearTimeout(timer);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
+      mutationObserver.disconnect();
     };
-  }, [savePosition, settings.readingMode]);
+  }, [savePosition, settings.readingMode, chapterId]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
@@ -147,18 +158,5 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
     setBookmarks(next);
     report(storage.saveBookmarks(book.id, next));
   }
-  function prepareContentChange(paragraphs: { id: string; text: string }[]) {
-    savePosition();
-    const position = latestPosition.current;
-    if (!position) return;
-    const original = chapter.paragraphs.find((p) => p.id === position.paragraphId);
-    const target = paragraphs.find((p) => p.id === position.paragraphId);
-    const fraction = original?.text.length ? (position.characterOffset ?? 0) / original.text.length : 0;
-    const next = { ...position, characterOffset: Math.floor(fraction * (target?.text.length ?? 0)) };
-    pendingPosition.current = next;
-    latestPosition.current = next;
-    restoreByCharacter.current = true;
-    setPositionRequest(next);
-  }
-  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError, positionRequest, savePagePosition, prepareContentChange, capturePosition: savePosition };
+  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError, positionRequest, savePagePosition, capturePosition: savePosition };
 }

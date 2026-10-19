@@ -26,7 +26,7 @@ export function SidePanel({ side, open, title, onClose, children }: Props) {
   }, [open, onClose]);
   return <>
     {open && <div className="panel-backdrop" onClick={onClose} aria-hidden="true" />}
-    <aside ref={ref} className={`side-panel ${side}-panel ${open ? 'is-open' : ''}`} role={open ? 'dialog' : undefined} aria-modal={open || undefined} aria-label={title}>
+    <aside ref={ref} className={`side-panel notranslate ${side}-panel ${open ? 'is-open' : ''}`} translate="no" lang="ko" role={open ? 'dialog' : undefined} aria-modal={open || undefined} aria-label={title}>
       <div className="panel-heading"><h2>{title}</h2><button className="icon-button panel-close" aria-label={`${title} 닫기`} onClick={onClose}><X size={20} /></button></div>
       {children}
     </aside>

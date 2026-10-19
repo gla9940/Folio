@@ -8,18 +8,14 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "test:e2e": "playwright test",
-    "check:source": "tsx scripts/check-source.ts"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/gowun-batang": "^5.3.0",
-    "cheerio": "^1.2.0",
     "fflate": "^0.8.3",
-    "ipaddr.js": "^2.5.0",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "robots-parser": "^3.0.1"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
@@ -27,7 +23,6 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"

@@ -1,63 +1,36 @@
-# 실제 연동 검증 기록
+# 정적 리더 검증 기록
 
 기준일: 2026-10-19 (Asia/Seoul).
 
-## 확인한 사항
+## 변경 범위
 
-- 대상: https://witchculttranslation.com/2021/01/29/arc-7-chapter-2-animal-tracking/
-- Node 서버 HTTP 요청: robots.txt 200, 테스트 화 200. 해당 요청에서는 리다이렉트 없음.
-- 실제 `fetchSource`의 도메인 제한·공인 DNS 고정·TLS 호스트 검증을 사용한 추출 진단 성공.
-- 제목: Arc 7, Chapter 2 – “Animal Tracking”. 7장 2화, 356문단, 47,159자.
-- 검증 시 본문 해시: `cd95a7446d45fe01beee39e983167ef5b2333f81d4a36910cf2fba244cf84303`.
-- robots.txt는 전체 크롤러의 `/wp-admin/`을 막으며 테스트 화 경로는 차단하지 않음.
-- 별도 자동 수집·재번역 허용 조건은 확인되지 않았음. robots 허용이 저작권 허가를 뜻하지 않음.
-- 실제 원문은 Git에 넣지 않음. `.local/` 진단 파일은 Git에서 제외됨.
+- 서버 API·인증·Redis·모델 호출·관련 UI 및 패키지를 제거했다. Vite 개발 서버도 API 미들웨어 없이 실행한다.
+- Vercel functions 설정을 제거하고 Vite 정적 출력만 배포한다.
+- EPUB/TXT 파서·서재·WCT 7장 원본 링크·두 읽기 모드·북마크·설정을 유지한다.
+- IndexedDB 이름·버전 1·기존 store·원문 ID 및 localStorage 키는 변경하지 않는다. 데이터 초기화/삭제/마이그레이션은 하지 않는다.
 
-## 현재 미검증
+## 브라우저 검증 방법
 
-- Gemini 키는 사용자가 Vercel에 설정했다고 알려 주었으나 로컬에는 없음.
-- 수정 배포 후 Volume 26 첫 본문 첫 구간의 실제 Gemini 생성 1회 및 새로고침 후 저장 유지를 확인함. 전체 화 생성·해당 계정의 무료 등급·잔여 한도·번역 품질은 검증하지 않음.
-- Vercel 개인 인증·Upstash 환경변수와 운영자 원문 정책 검토 설정은 배포 후 확인 필요.
-- 공식 모델·요금 문서는 `gemini-3.8-flash`와 무료 입력·출력을 확인할 수 있음. 이 사실만으로 특정 키의 요금제를 알 수는 없음.
-- 자동 브라우저 번역 테스트는 자체 작성 영어 텍스트와 모의 API 응답을 사용함. 이 자동 테스트와 별도로 운영에서 실제 첫 구간 1회 성공을 확인함.
-- iOS Safari 실기기 주소창·Safe Area 동작은 별도 확인 필요.
+설치된 Google Chrome에서 PC 1440×1000과 모바일 터치 화면을 검증한다. 기존 버전 형식의 EPUB 레코드·선택한 책·읽음·언어 설정·미사용 캐시·북마크·진도를 격리된 테스트 브라우저에 미리 넣고 앱을 연다. 실제 사용자 저장소는 테스트용 초기화에 사용하지 않는다.
 
-## 자동 테스트 결과
+DOM 번역 테스트는 공개 번역 API를 호출하지 않는다. 브라우저 번역과 유사하게 원래 텍스트 노드를 제거하고 중첩 font 요소·한국어 긴 문장·숨긴 원문 노드를 넣는다. 다음 동작을 확인한다.
 
-- `npm run build`: TypeScript 및 Vite 프로덕션 빌드 통과.
-- `npm test`: 35개 통과. 인증·Origin·분산 제한·400 안전 진단/반복 차단·429 쿨다운·DNS/IP/리다이렉트 방어·원문 파싱·번역 문단 검증 포함.
-- `npm run test:e2e`: 31개 통과. 기존 독서 17개 + 원문 서재/모의 번역 8개 + 파일·목차 6개.
-- 캐시 저장 보강 후 새 원문·번역 브라우저 테스트 7개를 다시 실행해 통과.
-- 브라우저 번들에서 Gemini/Upstash 서버 호출·서버 환경변수 식별자가 포함되지 않음을 확인. 원문 로컬 진단 파일과 `.env.local`은 Git 제외 확인.
+- 문단 기준 위치와 상대 문자 위치를 보존하며 페이지 수 자동 재계산.
+- 전체 문단 줄 상자가 페이지 높이/열 너비 안에 들어감.
+- 페이지 이동·화 이동·북마크·글자 크기·화면 크기·모드 전환·새로고침 후 React 오류 없음.
+- 스크롤 모드에서도 DOM 변경 후 문단 위치 복원.
+- API 경로 요청 없음, 로그인/번역 서비스 버튼 없음.
+- 기존 EPUB 레코드·미사용 캐시·언어 설정·북마크 보존 및 DB 버전 1 유지.
 
-## 목차·파일 등록 검증
+## 실행 결과
 
-- WCT 공식 `table-of-content/` 한 페이지를 직접 요청하여 HTTP 200과 7장 116개 고유 링크를 확인. 제목·번호·링크만 `src/data/wctArc7.json`에 저장했으며 개별 화 본문은 요청하지 않음.
-- 자체 작성 본문으로 생성한 EPUB 2 NCX와 EPUB 3 목차 앵커의 화 순서·문단·대사 줄바꿈·안정적인 ID 확인. 이미지/스크립트 외부 요청 없음.
-- DRM·외부 spine·문서 크기 초과·손상된 EPUB·문단 크기 초과·잘못된 TXT 인코딩은 등록 거절 확인. UTF-16 TXT와 제목 없는 TXT 등록 확인.
-- PC에서 여러 화를 한 권으로 등록, 화별 모의 번역·읽음 표시, 북마크로 화 이동, 읽던 화·스크롤 복원, 동일 파일 재등록 시 캐시·북마크·책 수 유지 확인.
-- 390×844 모바일 터치 환경에서 TXT 등록·가로 모드·언어 전환·문단 위치·북마크·다른 화 이동·새로고침·WCT 목차 표시 및 가로 넘침 없음 확인.
-- 파일 등록·메타데이터 확인은 실제 브라우저에서 실행. 번역 응답은 모의 API이며, 실제 Gemini 호출·자연스러운 번역 품질이나 실기기 iOS Safari 검증을 뜻하지 않음.
-- 이전 preview 배포는 302 Vercel Authentication으로 보호되었다. 사용자가 제공한 production `https://folio-dusky-xi.vercel.app/`에서 개인 인증 후 실제 Gemini 첫 구간 생성 1회와 IndexedDB 저장 보존을 확인했다. 다음 구간 요청 전 중단했다.
-- 실제 Volume 26의 요청 비교 및 Gemini 400 수정은 [별도 기록](gemini-400-diagnosis.md) 참고.
+- `npm run build`: TypeScript + Vite 정적 빌드 통과.
+- `npm test`: 원문 ID/검증·기존 읽기 저장 단위 테스트 9개 통과.
+- `npm run test:e2e`: 설치된 Google Chrome의 PC/모바일 터치 환경 28개 통과. 기존 독서 17개·파일/목차 6개·기존 저장소/번역 DOM 변경 5개.
+- 빌드 번들에 모델 호출 URL·서버 환경변수·기존 API 경로가 없고 Vercel functions 설정 및 미사용 서버 패키지가 없음을 확인.
 
-## 검증 재실행
+## 실제 브라우저 번역의 한계
 
-```sh
-npm run check:source
-npm test
-npm run test:e2e
-npm run build
-```
+Chrome 기본 번역 메뉴를 앱에서 호출할 수 있다고 가정하지 않는다. 자동 테스트는 실제 Chrome 엔진의 DOM 변경 내구성 검증이며 Google 번역 서비스 실행·번역 품질·Android/iOS 실기기 메뉴 동작을 검증한 것은 아니다. 사용자는 브라우저 메뉴에서 번역을 실행해야 한다. 화/모드 변경으로 새 본문이 생기면 브라우저 설정에 따라 다시 번역해야 할 수 있다.
 
-`check:source`는 한 화의 HTTP·robots·추출 진단만 수행하며 Gemini를 호출하지 않음. 운영 API의 정책 검토 설정을 대신하지 않음.
-
-배포 후 서재에서 로그인 → 모델 연결 확인 → 이용 조건 검토 후 한 화 가져오기(또는 허용된 영어 원문 수동 입력) → 번역하기 → 한국어 전환 → 새로고침 → 가로 모드 및 원문 복귀 확인 순서로 실제 검증해야 함.
-
-공식 참고:
-
-- [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
-- [Gemini 요금](https://ai.google.dev/gemini-api/docs/pricing?hl=en)
-- [Gemini 한도](https://ai.google.dev/gemini-api/docs/rate-limits)
-- [Vercel 함수 제한](https://vercel.com/docs/functions/limitations)
-- [Upstash REST](https://upstash.com/docs/redis/features/restapi)
+공식 참고: [Chrome 페이지 번역](https://support.google.com/chrome/answer/173424?hl=ko), [React의 외부 번역 DOM 변경 이슈](https://github.com/facebook/react/issues/11538).

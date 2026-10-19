@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } f
 import type { ReactNode } from 'react';
 import type { Bookmark as BookmarkModel, Chapter, ReaderSettings, ReadingAnchor, ReadingProgress } from '../domain/models';
 import { firstCharacterAt, textRange } from '../domain/readingPosition';
+import { ReaderText } from './ReaderText';
 
 export interface PageState { index: number; total: number }
 export interface PageController { turn: (direction: -1 | 1) => void }
@@ -130,12 +131,17 @@ export const PaginatedChapter = forwardRef<PageController, Props>(function Pagin
     };
     const observer = new ResizeObserver(schedule);
     observer.observe(viewport);
+    const mutations = new MutationObserver((records) => {
+      if (records.some((record) => record.type !== 'attributes' || (record.target as Element).closest('[data-reader-text]'))) schedule();
+    });
+    mutations.observe(track, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
     document.fonts.addEventListener('loadingdone', schedule);
     schedule();
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       document.fonts.removeEventListener('loadingdone', schedule);
     };
   }, [props.chapter.id, props.settings.fontSize, props.settings.lineHeight, props.settings.contentWidth, props.positionRequest]);
@@ -184,7 +190,7 @@ export const PaginatedChapter = forwardRef<PageController, Props>(function Pagin
         {props.chapter.paragraphs.map((paragraph, index) => {
           const saved = props.bookmarks.some((bookmark) => bookmark.chapterId === props.chapter.id && bookmark.paragraphId === paragraph.id);
           return <p id={paragraph.id} key={paragraph.id} data-paragraph data-page-block className={`paged-paragraph ${saved ? 'is-bookmarked' : ''}`}>
-            <button className="paragraph-bookmark" aria-label={`문단 ${index + 1} 북마크 ${saved ? '해제' : '저장'}`} aria-pressed={saved} onClick={() => props.onBookmark(paragraph.id)}><Bookmark size={14} fill={saved ? 'currentColor' : 'none'} strokeWidth={1.5} /></button><span data-paragraph-text>{paragraph.text}</span>
+            <button className="paragraph-bookmark notranslate" translate="no" aria-label={`문단 ${index + 1} 북마크 ${saved ? '해제' : '저장'}`} aria-pressed={saved} onClick={() => props.onBookmark(paragraph.id)}><Bookmark size={14} fill={saved ? 'currentColor' : 'none'} strokeWidth={1.5} /></button><ReaderText text={paragraph.text} paragraph />
           </p>;
         })}
         <div className="paged-ending" data-page-block>{props.ending}</div>

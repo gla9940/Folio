@@ -13,7 +13,7 @@ export function FileUpload({ onImport, busy, perform }: { onImport: (novels: Imp
     await perform(async () => { const value = await previewFile(chosen, charset); setTitle(value.title.slice(0, 200)); setPreview(value); });
   }
   return <section className="file-upload" aria-label="파일 등록">
-    <p className="field-note">개인 열람·번역이 허용된 EPUB/TXT를 선택하세요. 파일은 서버에 업로드되지 않으며 이 브라우저에서 분석·저장됩니다. 번역을 누르면 현재 화의 텍스트가 기존 Gemini 서버로 전송됩니다.</p>
+    <p className="field-note">개인 열람이 허용된 EPUB/TXT를 선택하세요. 파일은 서버에 업로드되지 않으며 이 브라우저에서 분석·저장됩니다.</p>
     <label htmlFor="text-encoding">TXT 인코딩</label><select id="text-encoding" value={encoding} disabled={busy} onChange={(event) => { setEncoding(event.target.value); if (file) void analyze(file, event.target.value); }}><option value="utf-8">UTF-8</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option><option value="euc-kr">EUC-KR</option></select>
     <label htmlFor="novel-file">EPUB / TXT 파일 (최대 20MB)</label><input id="novel-file" type="file" accept=".epub,.txt,application/epub+zip,text/plain" disabled={busy} onChange={(event) => { const chosen = event.target.files?.[0]; setFile(chosen ?? null); setPreview(null); if (chosen) void analyze(chosen, encoding); }} />
     {preview && <form onSubmit={(event) => { event.preventDefault(); void perform(async () => { await onImport(await fileNovels(preview, title)); }); }}>

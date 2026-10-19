@@ -1,4 +1,4 @@
-import type { ImportedNovel, TranslationCache } from '../../shared/novels';
+import type { ImportedNovel } from '../../shared/novels';
 const DB_NAME = 'folio-library-v1';
 let pending: Promise<IDBDatabase> | null = null;
 function database() {
@@ -7,6 +7,7 @@ function database() {
     request.onupgradeneeded = () => {
       const db = request.result;
       db.createObjectStore('novels', { keyPath: 'id' });
+      // Preserve the version-1 schema, including the unused legacy store. No migration/deletion.
       db.createObjectStore('translations', { keyPath: 'key' });
       db.createObjectStore('preferences', { keyPath: 'id' });
     };
@@ -45,31 +46,6 @@ export const novelCache = {
       for (const novel of novels) store.put(novel);
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(Error('파일을 저장하지 못했습니다. 저장 공간을 확인해 주세요.'));
-    });
-  },
-  async translation(key: string): Promise<TranslationCache | null> {
-    const value = await run<TranslationCache | undefined>('translations', 'readonly', (store) => store.get(key));
-    return value?.key === key && Array.isArray(value.chunks) ? value : null;
-  },
-  async saveTranslation(value: TranslationCache): Promise<TranslationCache> {
-    const db = await database();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('translations', 'readwrite');
-      const store = tx.objectStore('translations');
-      const read = store.get(value.key);
-      let merged = structuredClone(value);
-      read.onsuccess = () => {
-        const previous = read.result as TranslationCache | undefined;
-        if (previous?.sourceHash === value.sourceHash && Array.isArray(previous.chunks)) {
-          merged.chunks = merged.chunks.map((chunk) => {
-            const saved = previous.chunks.find((item) => item.id === chunk.id);
-            return chunk.status !== 'complete' && saved?.status === 'complete' && Array.isArray(saved.paragraphs) ? saved : chunk;
-          });
-        }
-        store.put(merged);
-      };
-      tx.oncomplete = () => resolve(merged);
-      tx.onerror = tx.onabort = () => reject(Error('번역 구간을 기기에 저장하지 못해 추가 API 호출을 중단했습니다.'));
     });
   },
   async preference<T>(id: string): Promise<T | undefined> { return (await run<{ id: string; value: T } | undefined>('preferences', 'readonly', (store) => store.get(id)))?.value; },
