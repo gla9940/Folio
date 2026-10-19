@@ -36,7 +36,7 @@ async function start(page: Page) {
   return { external, apiRequests };
 }
 async function openFiles(page: Page, mobile = false) {
-  if (mobile) await page.getByRole('button', { name: '목차 열기' }).click();
+  if (mobile && !await page.locator('.empty-library').isVisible()) await page.getByRole('button', { name: '목차 열기' }).click();
   await page.getByRole('button', { name: '파일 등록' }).click();
   await page.getByRole('tab', { name: 'EPUB / TXT', exact: true }).click();
 }
@@ -100,7 +100,7 @@ test('desktop EPUB book, read status and bookmarks survive refresh and duplicate
   await expect(page.getByLabel('등록할 목차').locator('li')).toHaveCount(2);
   await page.getByRole('button', { name: '2개 화 서재에 등록' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Chapter 1: The River');
-  await expect(page.getByLabel('서재 책 선택').locator('option')).toHaveCount(2);
+  await expect(page.getByLabel('서재 책 선택').locator('option')).toHaveCount(1);
   await page.getByRole('button', { name: '문단 1 북마크 저장', exact: true }).click();
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect(page.locator('.chapter-status').first()).toHaveText('읽음');
@@ -118,7 +118,7 @@ test('desktop EPUB book, read status and bookmarks survive refresh and duplicate
   await openFiles(page);
   await upload(page, 'renamed.epub', bytes);
   await page.getByRole('button', { name: '2개 화 서재에 등록' }).click();
-  await expect(page.getByLabel('서재 책 선택').locator('option')).toHaveCount(2);
+  await expect(page.getByLabel('서재 책 선택').locator('option')).toHaveCount(1);
   await expect(page.getByRole('tab', { name: '북마크 1' })).toBeVisible();
   await expect(page.getByRole('button', { name: /번역하기|번역 재시도|한국어|로그인/ })).toHaveCount(0);
   expect(apiRequests).toEqual([]);

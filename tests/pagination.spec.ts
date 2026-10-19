@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { sampleBook } from '../src/data/sampleBook';
+import { readerBook, seedReader } from './fixtures/readerBook';
 
-const progressKey = 'folio:v1:progress:rezero-demo';
+const progressKey = 'folio:v1:progress:test-reader';
 async function position(page: Page) {
   return page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), progressKey);
 }
@@ -18,7 +18,7 @@ async function openPaged(page: Page, mobile = false) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+  await seedReader(page);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 });
@@ -161,7 +161,7 @@ test.describe('mobile pages', () => {
       })).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       expect(await page.locator('[data-paragraph-text]').count()).toBe(16);
-      expect(await page.locator('[data-paragraph-text]').allTextContents()).toEqual(sampleBook.chapters[0].paragraphs.map((paragraph) => paragraph.text));
+      expect(await page.locator('[data-paragraph-text]').allTextContents()).toEqual(readerBook.chapters[0].paragraphs.map((paragraph) => paragraph.text));
     }
   });
 

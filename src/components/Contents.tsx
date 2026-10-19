@@ -17,7 +17,7 @@ export function Contents({ book, chapterId, bookmarks, tab, setTab, onNavigate, 
   const [collapsed, setCollapsed] = useState<string[]>([]);
   return <>
     {library && <div className="library-switcher"><label htmlFor="library-selection">내 서재</label><select id="library-selection" aria-label="서재 책 선택" value={library.selectedId} onChange={(event) => library.onSelect(event.target.value)}>{library.entries.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select><div className="library-switcher-actions"><button onClick={library.onManage}>서재 관리</button><button onClick={library.onOpen}>＋ 파일 등록 · 7장 목차</button></div></div>}
-    <div className="book-info"><div className="book-monogram" aria-hidden="true">Re<span>:</span></div><span className="eyebrow">MY LIBRARY</span><h2>{book.title}</h2><p>{book.id.startsWith('novel-') || book.id.startsWith('file-') ? '개인 서재 · 기기 저장' : '개인 서재 · 샘플 에디션'}</p></div>
+    <div className="book-info"><div className="book-monogram" aria-hidden="true">F<span>.</span></div><span className="eyebrow">MY LIBRARY</span><h2>{book.title}</h2><p>개인 서재 · 기기 저장</p></div>
     <div className="sidebar-tabs" role="tablist" aria-label="서재 탐색">
       <button role="tab" id="contents-tab" aria-controls="contents-panel" aria-selected={tab === 'contents'} onClick={() => setTab('contents')}>목차 <span>{book.chapters.length}</span></button>
       <button role="tab" id="bookmarks-tab" aria-controls="bookmarks-panel" aria-selected={tab === 'bookmarks'} onClick={() => setTab('bookmarks')}>북마크 <span>{bookmarks.length}</span></button>

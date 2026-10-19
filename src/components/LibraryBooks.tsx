@@ -60,6 +60,5 @@ export function LibraryBooks({ library, onRead }: { library: Library; onRead: (i
       {menu === book.id && <div className="library-book-menu" role="menu" aria-label={`${book.title} 관리 메뉴`} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMenu(null); menuButtons.current.get(book.id)?.focus(); } }}><button role="menuitem" onClick={() => { setAction({ id: book.id, kind: 'rename' }); setTitle(book.title); setMenu(null); }}>제목 수정</button><button className="danger" role="menuitem" onClick={() => { setAction({ id: book.id, kind: 'delete' }); setMenu(null); }}>책 삭제</button></div>}
     </li>)}</ul>
     {!filtered.length && <p className="library-empty">{books.length ? '검색한 제목의 책이 없습니다.' : '등록한 책이 없습니다. EPUB / TXT 탭에서 파일을 담아보세요.'}</p>}
-    <p className="field-note">샘플 에디션은 목차의 책 선택에서 열 수 있습니다. 등록한 책만 수정·삭제할 수 있습니다.</p>
   </section>;
 }

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { sampleBook, SAMPLE_BOOK_ID } from '../data/sampleBook';
 import type { Book } from '../domain/models';
 import { novelCache } from '../services/novelCache';
 import type { ImportedNovel } from '../../shared/novels';
@@ -14,7 +13,7 @@ export function novelBook(novel: ImportedNovel): Book {
 }
 export function useNovelLibrary() {
   const [entries, setEntries] = useState<ImportedNovel[]>([]);
-  const [selectedId, setSelectedId] = useState(SAMPLE_BOOK_ID);
+  const [selectedId, setSelectedId] = useState('');
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [readChapters, setReadChapters] = useState<Record<string, boolean>>({});
   const readRef = useRef<Record<string, boolean>>({});
@@ -26,7 +25,7 @@ export function useNovelLibrary() {
   const book = selected ? {
     ...novelBook(selected), id: libraryId(selected), title: titles[libraryId(selected)] ?? libraryTitle(selected),
     chapters: members.flatMap((entry) => novelBook(entry).chapters),
-  } : sampleBook;
+  } : null;
   const books = entries.filter((entry, index) => entries.findIndex((other) => libraryId(other) === libraryId(entry)) === index).map((entry) => ({ id: libraryId(entry), title: titles[libraryId(entry)] ?? libraryTitle(entry) }));
   const selectionId = group?.id ?? selectedId;
   const revision = members.map((entry) => `${entry.id}:${entry.source.hash}`).join('|');
@@ -43,8 +42,10 @@ export function useNovelLibrary() {
         if (!active) return;
         setEntries(novels);
         setTitles(savedTitles);
-        if (savedId && novels.some((novel) => novel.id === savedId)) setSelectedId(savedId);
+        const next = novels.find((novel) => novel.id === savedId || novel.collection?.id === savedId)?.id ?? novels[0]?.id ?? '';
+        setSelectedId(next);
         readRef.current = savedRead; setReadChapters(savedRead);
+        if (savedId !== next) await novelCache.savePreference('selected', next);
       } catch (problem) { if (active) setError((problem as Error).message); }
       finally { if (active) setReady(true); }
     })();
@@ -85,8 +86,7 @@ export function useNovelLibrary() {
   async function removeBook(id: string) {
     const targets = entries.filter((entry) => libraryId(entry) === id);
     if (!targets.length) throw Error('책을 찾을 수 없습니다.');
-    // Opening another imported book here would rewrite its last-read timestamp.
-    const fallback = SAMPLE_BOOK_ID;
+    const fallback = entries.find((entry) => libraryId(entry) !== id)?.id ?? '';
     const keys = [...new Set([id, ...targets.map((entry) => entry.id)])].flatMap((key) => [`folio:v1:progress:${key}`, `folio:v1:bookmarks:${key}`]);
     // Check access before committing the IndexedDB deletion. Never clear storage.
     keys.forEach((key) => window.localStorage.getItem(key));

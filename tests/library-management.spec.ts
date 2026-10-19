@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { createNovel, sha256 } from '../shared/novels';
 
-async function seed(page: Page) {
+async function seed(page: Page, legacySelection = false) {
   const entries = [];
   for (let book = 0; book < 3; book++) {
     const hash = await sha256(`management-${book}`);
@@ -14,7 +14,7 @@ async function seed(page: Page) {
   }
   await page.route('**/seed.html', route => route.fulfill({contentType: 'text/html', body: '<!doctype html>'}));
   await page.goto('/seed.html');
-  await page.evaluate(async (entries) => {
+  await page.evaluate(async ({entries, legacySelection}) => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('folio-library-v1', 1);
       request.onupgradeneeded = () => { for (const store of ['novels', 'translations', 'preferences']) request.result.createObjectStore(store, {keyPath: store === 'translations' ? 'key' : 'id'}); };
@@ -25,7 +25,7 @@ async function seed(page: Page) {
           tx.objectStore('translations').put({key: `legacy-${entry.id}`, novelId: entry.id, chapterId: entry.chapterId, data: 'keep'});
         }
         tx.objectStore('translations').put({ key: 'unrelated', data: 'preserve unknown owner' });
-        tx.objectStore('preferences').put({id: 'selected', value: entries[0].id});
+        tx.objectStore('preferences').put({id: 'selected', value: legacySelection ? 'rezero-demo' : entries[0].id});
         tx.objectStore('preferences').put({id: 'read-chapters', value: Object.fromEntries(entries.map(entry => [`${entry.id}:${entry.source.hash}`, true]))});
         tx.objectStore('preferences').put({id: 'languages', value: Object.fromEntries(entries.map(entry => [entry.id, 'ko']))});
         tx.objectStore('preferences').put({id: 'unrelated', value: {keep: true}});
@@ -39,7 +39,7 @@ async function seed(page: Page) {
       localStorage.setItem(`folio:v1:bookmarks:${bookId}`, JSON.stringify([{bookId, id: 'bookmark', chapterId: entry.chapterId, paragraphId: entry.paragraphs[0].id, excerpt: 'keep', createdAt: '2026-10-19'}]));
     }
     localStorage.setItem('folio:v1:progress:book-0-extra', 'do not remove a similar key');
-  }, entries);
+  }, {entries, legacySelection});
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
@@ -48,7 +48,7 @@ async function seed(page: Page) {
   return {entries, errors};
 }
 async function open(page: Page, mobile = false) {
-  if (mobile) await page.getByRole('button', {name: '목차 열기', exact: true}).click();
+  if (mobile && !await page.locator('.empty-library').isVisible()) await page.getByRole('button', {name: '목차 열기', exact: true}).click();
   await page.getByRole('button', {name: '서재 관리', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 }
@@ -112,11 +112,13 @@ for (const mobile of [false, true]) test(`${mobile ? 'mobile' : 'desktop'} cance
   await page.getByRole('button', {name: 'Beta 관리', exact: true}).click();
   await page.getByRole('menuitem', {name: '책 삭제'}).click();
   await page.getByRole('button', {name: '삭제 확인'}).click();
-  await expect(page.locator('.library-book-open strong')).toHaveText(['Gamma', 'Alpha']);
+  await expect(page.locator('.library-book-open strong')).toHaveText(['Alpha', 'Gamma']);
   const after = await snapshot(page);
   expect(after.novels).toEqual(expect.arrayContaining(entries.slice(2))); expect(after.novels).toHaveLength(4);
   expect(after.translations).toEqual((before.translations as {novelId?: string}[]).filter(item => !entries.slice(0,2).some(e => e.id === item.novelId)));
-  for (const [key, value] of Object.entries(before.local)) if (!['folio:v1:progress:book-0', 'folio:v1:bookmarks:book-0'].includes(key)) expect(after.local[key]).toBe(value);
+  for (const [key, value] of Object.entries(before.local)) if (!['folio:v1:progress:book-0', 'folio:v1:bookmarks:book-0', 'folio:v1:progress:book-1'].includes(key)) expect(after.local[key]).toBe(value);
+  expect(JSON.parse(after.local['folio:v1:progress:book-1']).chapterId).toBe(JSON.parse(before.local['folio:v1:progress:book-1']).chapterId);
+  expect(JSON.parse(after.local['folio:v1:progress:book-1']).paragraphId).toBe(JSON.parse(before.local['folio:v1:progress:book-1']).paragraphId);
   expect(after.local['folio:v1:progress:book-0']).toBeUndefined(); expect(after.local['folio:v1:bookmarks:book-0']).toBeUndefined();
   const prefs = after.preferences as {id: string; value: unknown}[];
   for (const id of ['read-chapters', 'languages']) {
@@ -158,7 +160,7 @@ test('active title edit keeps reading anchor and bookmarks, and cancel never wri
   await expect.poll(async () => anchor((await snapshot(page)).local['folio:v1:progress:book-0'])).not.toBe(anchor(before.local['folio:v1:progress:book-0']));
 });
 
-test('deleting the final imported book returns to the preserved sample and supports new TXT import', async ({page}) => {
+test('deleting the final imported book opens the empty library and supports new TXT import', async ({page}) => {
   await seed(page); await open(page);
   for (const title of ['Beta', 'Alpha', 'Gamma']) {
     await page.getByRole('button', {name: `${title} 관리`, exact: true}).click();
@@ -171,9 +173,24 @@ test('deleting the final imported book returns to the preserved sample and suppo
   const data = await snapshot(page);
   expect(data.novels).toEqual([]); expect(data.translations).toEqual([{key: 'unrelated', data: 'preserve unknown owner'}]);
   await page.getByRole('button', {name: '서재 관리 닫기'}).click();
-  await expect(page.locator('.demo-label')).toHaveText('DEMO');
+  await expect(page.getByRole('heading', {name: '등록된 책이 없습니다.', exact: true})).toBeVisible();
+  await expect(page.locator('.reader-app')).toHaveCount(0);
   await page.reload(); await open(page);
   await expect(page.getByText('등록한 책이 없습니다.', {exact: false})).toBeVisible();
   await page.getByRole('tab', {name: 'EPUB / TXT'}).click();
   await expect(page.locator('input[type=file]')).toBeAttached();
+});
+
+test('a removed selection falls back to a registered book without deleting records or bookmarks', async ({page}) => {
+  const {entries, errors} = await seed(page, true);
+  await expect(page.locator('.chapter-heading h1')).toHaveText(entries[1].title);
+  await expect(page.getByLabel('서재 책 선택').locator('option')).toHaveCount(3);
+  await expect(page.getByLabel('서재 책 선택')).not.toContainText('샘플');
+  const stored = await snapshot(page);
+  expect(stored.novels).toHaveLength(6); expect(stored.translations).toHaveLength(7);
+  expect(stored.local['folio:v1:bookmarks:book-0']).toContain('bookmark');
+  const selected = (stored.preferences as {id: string; value: unknown}[]).find(p => p.id === 'selected');
+  expect(selected?.value).toBe(entries[1].id);
+  await open(page); await expect(page.getByRole('region', {name: '이어서 읽기'})).not.toContainText('샘플');
+  expect(errors).toEqual([]);
 });

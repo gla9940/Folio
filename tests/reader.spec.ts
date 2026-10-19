@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { seedReader } from './fixtures/readerBook';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('낯선 세계의 아침');
+  await seedReader(page);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 1');
   await page.evaluate(() => document.fonts.ready);
 });
 
@@ -25,16 +26,16 @@ test('desktop layout, reading settings and theme persist after reload', async ({
 });
 
 test('chapter and reading position restore after reload', async ({ page }) => {
-  await page.getByRole('button', { name: '02 아침의 광장' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('아침의 광장');
+  await page.getByRole('button', { name: /02 독서 검증 2/ }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 2');
   await page.evaluate(() => window.scrollTo(0, 730));
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('folio:v1:progress:rezero-demo')!).scrollY)).toBe(730);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('folio:v1:progress:test-reader')!).scrollY)).toBe(730);
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('아침의 광장');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 2');
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(710);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(750);
   await page.getByRole('button', { name: '다음 화', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('이름을 묻는 일');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 3');
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
@@ -46,34 +47,34 @@ test('bookmarks persist, jump across chapters, and delete without navigation', a
   await page.getByRole('tab', { name: '북마크 2' }).click();
   await expect(page.locator('.bookmark-entry')).toHaveCount(2);
   await page.locator('.bookmark-jump').first().click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('낯선 세계의 아침');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 1');
   await expect(page.getByRole('button', { name: '문단 4 북마크 해제', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => page.locator('#c1-p4').evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBe(120);
   await page.getByRole('button', { name: '2화 북마크 삭제', exact: true }).click();
   await expect(page.locator('.bookmark-entry')).toHaveCount(1);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('낯선 세계의 아침');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 1');
   await page.getByRole('button', { name: '문단 4 북마크 해제', exact: true }).click();
   await expect(page.getByRole('tab', { name: '북마크 0' })).toBeVisible();
 });
 
 test('first and last chapter boundaries and grouped contents', async ({ page }) => {
   await expect(page.getByRole('button', { name: '이전 화', exact: true })).toBeDisabled();
-  const arc = page.getByRole('button', { name: '제2장 다시 이어지는 이야기' });
+  const arc = page.getByRole('button', { name: '전체 목차 테스트 독서 파일' });
   await arc.click();
-  await expect(page.getByRole('button', { name: '06 다시, 첫 페이지' })).toBeHidden();
+  await expect(page.getByRole('button', { name: /06 독서 검증 6/ })).toBeHidden();
   await arc.click();
-  await page.getByRole('button', { name: '06 다시, 첫 페이지' }).click();
+  await page.getByRole('button', { name: /06 독서 검증 6/ }).click();
   await expect(page.getByRole('button', { name: '다음 화', exact: true })).toBeDisabled();
 });
 
 test('corrupt browser data falls back safely', async ({ page }) => {
   await page.evaluate(() => {
     localStorage.setItem('folio:v1:settings', '{broken');
-    localStorage.setItem('folio:v1:progress:rezero-demo', JSON.stringify({ bookId: 'rezero-demo', chapterId: 'missing', scrollY: 999, updatedAt: 'today' }));
-    localStorage.setItem('folio:v1:bookmarks:rezero-demo', '[null, {"id": 5}]');
+    localStorage.setItem('folio:v1:progress:test-reader', JSON.stringify({ bookId: 'test-reader', chapterId: 'missing', scrollY: 999, updatedAt: 'today' }));
+    localStorage.setItem('folio:v1:bookmarks:test-reader', '[null, {"id": 5}]');
   });
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('낯선 세계의 아침');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 1');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'sepia');
   await expect(page.getByRole('tab', { name: '북마크 0' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
@@ -84,7 +85,7 @@ test('blocked storage keeps reading functional and reports the problem', async (
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('기기 저장 공간');
   await page.getByRole('button', { name: '다음 화', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('아침의 광장');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 2');
 });
 
 test('desktop screenshot', async ({ page }) => {
@@ -105,9 +106,9 @@ test.describe('mobile', () => {
     await page.getByRole('button', { name: '목차 열기' }).tap();
     const contents = page.getByRole('dialog', { name: '내 서재' });
     await expect(contents).toBeVisible();
-    await contents.getByRole('button', { name: '02 아침의 광장' }).tap();
+    await contents.getByRole('button', { name: /02 독서 검증 2/ }).tap();
     await expect(contents).toBeHidden();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('아침의 광장');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('독서 검증 2');
     await page.getByRole('button', { name: '읽기 설정', exact: true }).tap();
     const settings = page.getByRole('dialog', { name: '읽기 설정' });
     await expect(settings).toBeVisible();
