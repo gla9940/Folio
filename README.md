@@ -1,7 +1,7 @@
 # Folio
 
 개인용 웹소설 리더. React + TypeScript + Vite로 만든 모바일 우선 웹 앱입니다.
-Re:제로 개인 서재를 위한 데모이며, 실제 소설 원문을 포함하지 않습니다.
+창작 샘플을 보존하면서 Witch Cult Translations의 한 화 가져오기·수동 입력과 Gemini 한국어 번역을 지원합니다. 실제 소설 원문과 API 키는 저장소에 포함하지 않습니다.
 
 ## 실행
 
@@ -17,6 +17,7 @@ npm run build      # TypeScript 검사 + 프로덕션 빌드
 npm run preview    # 빌드 결과 미리보기
 npm test           # 저장소 단위 테스트
 npm run test:e2e   # 실제 브라우저 기능 테스트
+npm run check:source # 7장 2화 HTTP·robots·추출 진단 (Gemini 호출 없음)
 ```
 
 브라우저 테스트는 기본적으로 설치된 Microsoft Edge를 사용합니다. 다른 환경에서는
@@ -59,11 +60,68 @@ tests/reader.spec.ts               # 데스크톱 / 모바일 브라우저 테�
 tests/pagination.spec.ts           # 가로 조판 / 긴 문단 / 재조판 / 위치 복원
 ```
 
-다음 단계:
+## 원문·번역 사용
 
-1. 실제 보유 콘텐츠를 `BookRepository` 어댑터로 연결. 문단 ID는 업데이트 후에도 안정적으로 유지.
-2. Supabase 연결 전 인증·소유권·RLS를 설계하고, 동기 비동기 저장 경계와 충돌 정책을 정한 뒤 별도 원격 동기화 서비스를 추가.
-3. `TranslationProvider`의 서버 어댑터 구현. API 키는 프런트엔드에 넣지 않고 서버에서 관리.
-4. PWA manifest, 아이콘, 서비스 워커, 오프라인 캐시 및 업데이트 정책 추가.
+1. 목차의 **소설 URL 추가**에서 개인 서재에 로그인합니다.
+2. Witch Cult Translations 개별 화 URL을 가져옵니다. 접근·robots·리다이렉트·자동 처리 제한·운영자 이용 조건 검토를 확인합니다. 외부 리다이렉트·로그인·차단·알 수 없는 HTML 구조는 우회하지 않습니다.
+3. 자동 수집을 허용할 수 없는 경우 **직접 원문 입력**을 사용합니다. 빈 줄로 문단을 구분하고 문단 안 줄바꿈은 유지합니다. 수동 저장은 외부 서버 호출 없이 사용할 수 있습니다.
+4. **번역하기**는 최대 32문단·약 4,000자씩 문맥 단위로 처리합니다. 앞뒤 원문·직전 번역과 버전별 고유명사 용어집을 참고합니다. ID·순서·개수·줄바꿈·비정상 길이를 검증하며, 의미의 정확성·자연스러움은 별도 검수가 필요합니다.
+5. 완료 구간은 IndexedDB에 즉시 저장합니다. 모든 구간이 끝나면 **한국어 / 원문 보기**를 전환할 수 있습니다. 중간 완료 구간도 보존되며, 중단 후 **이어서 번역**, 오류 후 **번역 재시도**로 미완료 구간만 요청합니다.
+6. 캐시 키에는 원문 URL·화 ID·원문 SHA-256·모델·번역 프롬프트 및 용어집 버전이 포함됩니다. 원문이 바뀌면 별도 캐시를 사용합니다. 번역 후 새로고침해도 API를 다시 호출하지 않습니다.
 
-이번 단계에는 크롤링, 외부 API 호출, Supabase, PWA 서비스 워커를 포함하지 않습니다.
+문단 ID는 문단 내용 해시와 중복 순번으로 구성해 같은 원문을 다시 가져오거나 앞에 문단이 삽입돼도 유지됩니다. 원문과 번역은 동일한 문단 ID를 사용하며, 언어 전환 시 문단과 문단 내부 상대 위치로 읽던 곳을 복원하고 다시 조판합니다. 서재 선택·언어·원문·번역은 기기/브라우저/접속 주소별 IndexedDB에 보관합니다. 읽기 설정·북마크·진도 localStorage는 기존 키를 유지합니다. 기기 간 동기화는 없습니다.
+
+## Vercel 설정
+
+GitHub 프로젝트를 Vercel의 Vite 프로젝트로 연결합니다. Node.js 22 이상, 빌드 `npm run build`, 출력 `dist`, Fluid Compute 사용을 권장합니다. `api/folio.ts`는 Vercel Node 함수이며 `vercel.json`에서 최대 실행 시간 60초를 설정했습니다. 한 요청은 한 번역 구간만 처리하고 Gemini 응답은 35초에서 중단합니다. Hobby의 Fluid Compute 실행 시간 상한과 요청 한도는 [공식 문서](https://vercel.com/docs/functions/limitations)에서 확인하세요.
+
+Vercel **Settings → Environment Variables**에 아래 값을 서버 전용으로 설정하고 다시 배포합니다. Production과 Preview는 실제 사용할 환경에 각각 설정합니다. `VITE_` 접두사를 사용하지 마세요.
+
+| 이름 | 설정 |
+| --- | --- |
+| `FOLIO_ORIGIN` | 실제 배포된 HTTPS 주소의 origin. 경로·후행 `/` 없이, 예: `https://your-folio.vercel.app`. Preview에서는 해당 Preview origin 별도 설정 필요. |
+| `FOLIO_PASSWORD` | 16자 이상의 충분히 긴 무작위 개인 서재 비밀번호. |
+| `FOLIO_SESSION_SECRET` | 32자 이상의 무작위 서명 비밀. 비밀번호와 다르게 생성. |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis 무료 데이터베이스의 HTTPS REST URL (`*.upstash.io`). |
+| `UPSTASH_REDIS_REST_TOKEN` | 같은 데이터베이스의 REST 쓰기 토큰. |
+| `GEMINI_API_KEY` | AI Studio에서 만든 서버용 Gemini 키. API 제한을 Gemini API로 설정 권장. |
+| `GEMINI_FREE_TIER_CONFIRMED` | 결제가 연결되지 않은 무료 프로젝트임을 운영자가 확인한 뒤 `true`. 미설정 시 생성 호출 거부. |
+| `WCT_IMPORT_ALLOWED` | 사이트의 수집·재번역 이용 조건/필요한 허가를 검토하기 전에는 `false`. 검토 완료 후에만 `true`. |
+| `WCT_POLICY_REVIEW_URL` | 실제 검토한 이용 조건 또는 허가의 HTTPS 참조 주소. |
+| `WCT_POLICY_REVIEWED_AT` | 실제 검토일 ISO 날짜. 예: `2026-10-19`. |
+
+비밀 값은 채팅·README·GitHub에 붙여 넣지 마세요. `.env.example`에는 이름만 있습니다. 로컬 개발은 `.env.example`을 `.env.local`로 복사해 값을 넣고 `FOLIO_ORIGIN=http://127.0.0.1:5173`으로 설정한 뒤 `npm run dev`를 사용합니다. 로컬 Vite 개발 서버에도 동일한 인증·요청 제한이 적용됩니다. `npm run preview`는 정적 빌드 미리보기로 서버 API를 제공하지 않습니다.
+
+인증은 12시간 HMAC 서명 HttpOnly·SameSite=Strict 세션 쿠키(배포에서는 Secure)를 사용합니다. POST는 정확한 Origin 검증이 필요합니다. 인증/분산 제한 저장소가 없으면 외부 요청을 거부합니다. Upstash는 원격 인증·사용량 제한·동시 번역 잠금·30일 구간 응답 캐시만 담당하며 Supabase 동기화 기능은 없습니다. 비용/무료 한도는 해당 서비스 대시보드에서 확인하세요.
+
+## 무료 사용량 보호
+
+- 모델은 **`gemini-3.8-flash` 고정**입니다. 실패·404·429 시 다른 모델이나 유료 API로 자동 전환하지 않습니다.
+- 서버의 전역 Gemini 생성 제한: 분당 3회, UTC 날짜별 하루 15회. 클라이언트는 새 구간 사이 21초 대기합니다. 모든 인스턴스·탭이 Redis 원자 카운터와 잠금을 공유합니다.
+- 로그인은 전역 분당 12회, 원문 가져오기는 분당 2회·하루 10회, 인증 API는 분당 60회입니다. 초과 시 429를 반환합니다. robots에 명시적 crawl-delay가 있으면 자동 가져오기 대신 수동 입력으로 안내합니다.
+- Gemini 429 발생 시 현재 작업을 중단하고 서버 공용 쿨다운을 기록합니다. 자동 재시도는 하지 않으며 완료 구간을 지우지 않습니다. 실패/시간 초과 후 실제 요청이 처리됐을 가능성까지 과금 0을 보장할 수 없으므로 무료 프로젝트 사용이 필요합니다.
+- **Gemini 생성 API는 키가 무료/유료 프로젝트에 속했는지 알려 주지 않습니다.** `GEMINI_FREE_TIER_CONFIRMED`는 운영자 확인 표시이며 결제를 기술적으로 비활성화하는 설정이 아닙니다. **Cloud Billing이 연결되지 않은 프로젝트 키**를 사용하세요. 결제 연결·업그레이드는 이 앱에서 수행하지 않습니다.
+- 공식 [모델 문서](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)와 [요금 문서](https://ai.google.dev/gemini-api/docs/pricing?hl=en)는 무료 등급을 제공하지만, 계정별 한도는 [AI Studio/한도 안내](https://ai.google.dev/gemini-api/docs/rate-limits)에서 별도로 확인해야 합니다. 무료 등급 콘텐츠의 Google 서비스 개선 사용 여부도 약관에서 확인하세요.
+
+## 서버·캐시 구조
+
+```text
+api/folio.ts                      # Vercel 함수 진입점
+server/handler.ts                 # 로그인 / 가져오기 / 모델 확인 / 구간 번역
+server/auth.ts                    # 개인 세션 및 Origin 제어
+server/redis.ts                   # 분산 한도·잠금
+server/source.ts                  # 도메인 제한·DNS 고정·robots·원문 추출
+server/gemini.ts                  # 서버 키·고정 모델·구조화 출력 검증
+shared/novels.ts                   # 원문 모델·해시·배치·캐시 키·검증
+shared/glossary.ts                 # 리제로 용어집·소설 번역 지침
+src/services/novelCache.ts         # IndexedDB 영속 저장
+src/services/folioApi.ts           # 기존 TranslationProvider의 서버 어댑터
+src/hooks/useNovelLibrary.ts       # 원문·번역·중단/재개 상태
+tests/library.spec.ts              # 모의 API + 실제 브라우저 캐시·실패·언어 전환
+```
+
+## 검증 범위와 미완료 사항
+
+[실제 검증 기록](docs/integration-verification.md)에 HTTP·robots·본문 추출과 실제 Gemini 번역 검증을 구분해 기록했습니다. 7장 2화의 실서버 접근 및 추출은 검증했습니다. 번역 브라우저 테스트는 자체 작성 텍스트와 모의 응답을 사용하며, **실제 Gemini 번역 성공이나 문학적 품질 검증을 의미하지 않습니다.** 배포 환경의 인증·요청 제한·모델 연결 확인 후 실제 한 화 번역과 캐시 재열람 검증이 필요합니다.
+
+이번 범위에는 전체 목차/작품 일괄 수집, 접근 우회, Supabase 동기화, PWA를 포함하지 않습니다.

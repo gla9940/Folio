@@ -147,5 +147,18 @@ export function useReader(book: Book, storage: ReaderStorage) {
     setBookmarks(next);
     report(storage.saveBookmarks(book.id, next));
   }
-  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError, positionRequest, savePagePosition };
+  function prepareContentChange(paragraphs: { id: string; text: string }[]) {
+    savePosition();
+    const position = latestPosition.current;
+    if (!position) return;
+    const original = chapter.paragraphs.find((p) => p.id === position.paragraphId);
+    const target = paragraphs.find((p) => p.id === position.paragraphId);
+    const fraction = original?.text.length ? (position.characterOffset ?? 0) / original.text.length : 0;
+    const next = { ...position, characterOffset: Math.floor(fraction * (target?.text.length ?? 0)) };
+    pendingPosition.current = next;
+    latestPosition.current = next;
+    restoreByCharacter.current = true;
+    setPositionRequest(next);
+  }
+  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError, positionRequest, savePagePosition, prepareContentChange, capturePosition: savePosition };
 }

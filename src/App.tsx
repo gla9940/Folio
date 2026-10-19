@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, CloudOff, List, SlidersHorizontal } from 'lucide-react';
-import type { Book, Bookmark as BookmarkModel } from './domain/models';
-import { sampleBookRepository, SAMPLE_BOOK_ID } from './data/sampleBook';
+import type { Bookmark as BookmarkModel } from './domain/models';
+import { sampleBook, SAMPLE_BOOK_ID } from './data/sampleBook';
 import { createLocalReaderStorage } from './services/localReaderStorage';
 import { useReader } from './hooks/useReader';
 import { Contents } from './components/Contents';
@@ -11,28 +11,28 @@ import { SidePanel } from './components/SidePanel';
 import { PaginatedChapter } from './components/PaginatedChapter';
 import type { PageController, PageState } from './components/PaginatedChapter';
 import { useVisualViewport } from './hooks/useVisualViewport';
+import { novelBook, useNovelLibrary } from './hooks/useNovelLibrary';
+import { LibraryDialog } from './components/LibraryDialog';
+import { NovelControls } from './components/NovelControls';
 
 const storage = createLocalReaderStorage();
 
 export function App() {
-  const [book, setBook] = useState<Book | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    let active = true;
-    sampleBookRepository.getBook(SAMPLE_BOOK_ID).then((value) => { if (active) setBook(value); }).catch(() => { if (active) setError(true); });
-    return () => { active = false; };
-  }, []);
-  if (!book) return <main className="loading-state"><span className="wordmark">Folio<span>.</span></span><p>{error ? '책을 불러오지 못했어요. 새로고침해 주세요.' : '이야기를 펼치고 있어요.'}</p></main>;
-  return <Reader book={book} />;
+  const library = useNovelLibrary();
+  if (!library.ready) return <main className="loading-state"><span className="wordmark">Folio<span>.</span></span><p>이야기를 펼치고 있어요.</p></main>;
+  return <Reader key={`${library.book.id}:${library.selected?.source.hash ?? 'sample'}`} library={library} />;
 }
 
-function Reader({ book }: { book: Book }) {
+function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
+  const book = library.book;
   const reader = useReader(book, storage);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [panel, setPanel] = useState<'contents' | 'settings' | null>(null);
   const [tab, setTab] = useState<'contents' | 'bookmarks'>('contents');
   const [menusVisible, setMenusVisible] = useState(true);
   const [announcement, setAnnouncement] = useState('');
   const closePanel = useCallback(() => setPanel(null), []);
+  const openLibrary = () => { closePanel(); setLibraryOpen(true); };
   const { chapter, chapterIndex, settings, bookmarks } = reader;
   const paged = settings.readingMode === 'paged';
   const pageController = useRef<PageController>(null);
@@ -61,23 +61,23 @@ function Reader({ book }: { book: Book }) {
     setAnnouncement('북마크를 삭제했어요.');
   }
   const textStyle = { '--reader-font-size': `${settings.fontSize}px`, '--reader-line-height': settings.lineHeight, '--reader-width': `${settings.contentWidth}px` } as CSSProperties;
-  const chapterHeading = <header className="chapter-heading"><p className="eyebrow">CHAPTER {String(chapter.number).padStart(2, '0')}</p><h1>{chapter.title}</h1><div className="chapter-metadata"><span>제{chapter.number}화</span><span className="metadata-dot">·</span><span>약 {Math.max(1, Math.ceil(chapter.paragraphs.reduce((sum, item) => sum + item.text.length, 0) / 400))}분 분량</span><span className="demo-label">DEMO</span></div><span className="chapter-rule" /></header>;
+  const chapterHeading = <header className="chapter-heading"><p className="eyebrow">CHAPTER {String(chapter.number).padStart(2, '0')}</p><h1>{chapter.title}</h1><div className="chapter-metadata"><span>제{chapter.number}화</span><span className="metadata-dot">·</span><span>약 {Math.max(1, Math.ceil(chapter.paragraphs.reduce((sum, item) => sum + item.text.length, 0) / 400))}분 분량</span><span className="demo-label">{library.selected ? library.language === 'ko' ? 'AI · KO' : 'EN' : 'DEMO'}</span></div><span className="chapter-rule" /></header>;
   const chapterEnding = <>
     <div className="chapter-end"><span>✧</span><p>이야기는 다음 페이지로 이어집니다.</p></div>
     <nav className="chapter-navigation" aria-label="본문 하단 화 이동"><button disabled={!previous} onClick={() => previous && navigate(previous.id)}><ArrowLeft size={17} /><span><small>이전 화</small>{previous?.title ?? '첫 번째 이야기'}</span></button><button disabled={!next} onClick={() => next && navigate(next.id)}><span><small>다음 화</small>{next?.title ?? '마지막 이야기'}</span><ArrowRight size={17} /></button></nav>
-    <p className="demo-notice">이 본문은 뷰어 시연을 위해 작성한 창작 샘플입니다.<br />실제 소설 원문이나 번역문을 포함하지 않습니다.</p>
+    {library.selected ? <p className="demo-notice">{library.selected.source.attribution}<br /><a href={library.selected.source.url} target="_blank" rel="noopener noreferrer">원본 출처</a>{library.language === 'ko' ? ' · Gemini AI 번역 (검수되지 않음)' : ' · 영어 원문'}</p> : <p className="demo-notice">이 본문은 뷰어 시연을 위해 작성한 창작 샘플입니다.<br />실제 소설 원문이나 번역문을 포함하지 않습니다.</p>}
   </>;
   return <div className={`reader-app ${paged ? 'paged-mode' : ''} ${menusVisible ? 'menus-visible' : 'menus-hidden'}`} style={textStyle}>
     <a className="skip-link" href="#reader-text">본문으로 건너뛰기</a>
     <header className="topbar" inert={panel !== null}>
       <div className="brand"><BookOpen size={21} strokeWidth={1.5} /><span className="wordmark">Folio<span>.</span></span><span className="brand-divider" /><span className="brand-caption">나만의 작은 서재</span></div>
-      <div className="topbar-book">{book.title}<span>샘플 에디션</span></div>
+      <div className="topbar-book">{book.title}<span>{library.selected ? '개인 서재' : '샘플 에디션'}</span></div>
       <div className={`save-state ${reader.storageError ? 'has-error' : ''}`}>{reader.storageError ? <CloudOff size={14} /> : <Check size={14} />}<span>{reader.storageError ? '기기 저장 불가' : '이 기기에 자동 저장'}</span></div>
       <button className="icon-button compact-settings" aria-label="읽기 설정 열기" onClick={() => setPanel('settings')}><SlidersHorizontal size={20} /></button>
     </header>
 
     <SidePanel side="left" open={panel === 'contents'} title="내 서재" onClose={closePanel}>
-      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} />
+      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} library={{ selectedId: library.selectedId, entries: [{ id: SAMPLE_BOOK_ID, title: `샘플 · ${sampleBook.title}` }, ...library.entries.map((entry) => ({ id: entry.id, title: entry.title }))], onSelect: (id) => { reader.capturePosition(); library.select(id); closePanel(); }, onOpen: openLibrary }} />
     </SidePanel>
 
     <main className={`reading-main ${paged ? 'paged-main' : ''}`} inert={panel !== null} onClick={(event) => {
@@ -88,7 +88,8 @@ function Reader({ book }: { book: Book }) {
       else if (event.clientX > bounds.right) pageController.current?.turn(1);
     }}>
       <div className="reading-context"><span>{arc.title}<ChevronRight size={12} />{arc.subtitle}</span><span>{String(chapterIndex + 1).padStart(2, '0')} <span className="muted">/ {String(book.chapters.length).padStart(2, '0')}</span></span></div>
-      {paged ? <PaginatedChapter key={chapter.id} ref={pageController} chapter={chapter} settings={settings} bookmarks={bookmarks} heading={chapterHeading} ending={chapterEnding} positionRequest={reader.positionRequest} disabled={panel !== null} onBookmark={toggleBookmark} onToggleMenus={() => setMenusVisible((current) => !current)} onPageState={setPageState} onPosition={reader.savePagePosition} /> : <article className="chapter-body" aria-label={`${chapter.number}화 ${chapter.title}`} onClick={(event) => {
+      <NovelControls library={library} onLogin={openLibrary} onLanguage={(language) => { if (library.selected && language !== library.language) { reader.prepareContentChange(novelBook(library.selected, library.cache, language).chapters[0].paragraphs); library.setLanguage(language); } }} />
+      {paged ? <PaginatedChapter key={chapter.id} ref={pageController} chapter={chapter} settings={settings} bookmarks={bookmarks} heading={chapterHeading} ending={chapterEnding} positionRequest={reader.positionRequest} disabled={panel !== null || libraryOpen} onBookmark={toggleBookmark} onToggleMenus={() => setMenusVisible((current) => !current)} onPageState={setPageState} onPosition={reader.savePagePosition} /> : <article className="chapter-body" aria-label={`${chapter.number}화 ${chapter.title}`} onClick={(event) => {
         if (window.matchMedia('(max-width: 759px)').matches && !window.getSelection()?.toString() && !(event.target as HTMLElement).closest('button, a')) setMenusVisible((current) => !current);
       }}>
         {chapterHeading}
@@ -116,5 +117,7 @@ function Reader({ book }: { book: Book }) {
     {!menusVisible && <button className="show-menus" aria-label="독서 메뉴 표시" onClick={() => setMenusVisible(true)}><List size={16} /></button>}
     <div className={`toast ${announcement ? 'visible' : ''}`} role="status">{announcement}</div>
     {reader.storageError && <div className="storage-warning" role="alert">기기 저장 공간 또는 브라우저 설정을 확인해 주세요. 현재 변경 사항은 새로고침하면 사라질 수 있어요.</div>}
+    {!library.selected && library.error && <div className="library-storage-error" role="alert">{library.error}</div>}
+    {libraryOpen && <LibraryDialog library={library} onClose={() => setLibraryOpen(false)} />}
   </div>;
 }
