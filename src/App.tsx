@@ -1,0 +1,101 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { ArrowLeft, ArrowRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, CloudOff, List, SlidersHorizontal } from 'lucide-react';
+import type { Book, Bookmark as BookmarkModel } from './domain/models';
+import { sampleBookRepository, SAMPLE_BOOK_ID } from './data/sampleBook';
+import { createLocalReaderStorage } from './services/localReaderStorage';
+import { useReader } from './hooks/useReader';
+import { Contents } from './components/Contents';
+import { ReaderSettings } from './components/ReaderSettings';
+import { SidePanel } from './components/SidePanel';
+
+const storage = createLocalReaderStorage();
+
+export function App() {
+  const [book, setBook] = useState<Book | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    sampleBookRepository.getBook(SAMPLE_BOOK_ID).then((value) => { if (active) setBook(value); }).catch(() => { if (active) setError(true); });
+    return () => { active = false; };
+  }, []);
+  if (!book) return <main className="loading-state"><span className="wordmark">Folio<span>.</span></span><p>{error ? '책을 불러오지 못했어요. 새로고침해 주세요.' : '이야기를 펼치고 있어요.'}</p></main>;
+  return <Reader book={book} />;
+}
+
+function Reader({ book }: { book: Book }) {
+  const reader = useReader(book, storage);
+  const [panel, setPanel] = useState<'contents' | 'settings' | null>(null);
+  const [tab, setTab] = useState<'contents' | 'bookmarks'>('contents');
+  const [menusVisible, setMenusVisible] = useState(true);
+  const [announcement, setAnnouncement] = useState('');
+  const closePanel = useCallback(() => setPanel(null), []);
+  const { chapter, chapterIndex, settings, bookmarks } = reader;
+  const arc = book.arcs.find((item) => item.id === chapter.arcId)!;
+  const previous = book.chapters[chapterIndex - 1];
+  const next = book.chapters[chapterIndex + 1];
+
+  useEffect(() => { document.title = `${chapter.title} · Folio`; }, [chapter.title]);
+  useEffect(() => {
+    if (!announcement) return;
+    const timer = setTimeout(() => setAnnouncement(''), 2400);
+    return () => clearTimeout(timer);
+  }, [announcement]);
+  useEffect(() => {
+    const resize = () => { if (window.innerWidth >= 1200 || (window.innerWidth >= 760 && panel === 'contents')) setPanel(null); };
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [panel]);
+
+  function navigate(id: string, paragraphId?: string) { reader.navigate(id, paragraphId); closePanel(); setMenusVisible(true); }
+  function toggleBookmark(id: string) { const added = reader.toggleBookmark(id); setAnnouncement(added ? '북마크에 문단을 담았어요.' : '북마크를 삭제했어요.'); }
+  function removeBookmark(bookmark: BookmarkModel) {
+    reader.removeBookmark(bookmark.id);
+    setAnnouncement('북마크를 삭제했어요.');
+  }
+  const textStyle = { '--reader-font-size': `${settings.fontSize}px`, '--reader-line-height': settings.lineHeight, '--reader-width': `${settings.contentWidth}px` } as CSSProperties;
+  return <div className={`reader-app ${menusVisible ? 'menus-visible' : 'menus-hidden'}`} style={textStyle}>
+    <a className="skip-link" href="#reader-text">본문으로 건너뛰기</a>
+    <header className="topbar" inert={panel !== null}>
+      <div className="brand"><BookOpen size={21} strokeWidth={1.5} /><span className="wordmark">Folio<span>.</span></span><span className="brand-divider" /><span className="brand-caption">나만의 작은 서재</span></div>
+      <div className="topbar-book">{book.title}<span>샘플 에디션</span></div>
+      <div className={`save-state ${reader.storageError ? 'has-error' : ''}`}>{reader.storageError ? <CloudOff size={14} /> : <Check size={14} />}<span>{reader.storageError ? '기기 저장 불가' : '이 기기에 자동 저장'}</span></div>
+      <button className="icon-button compact-settings" aria-label="읽기 설정 열기" onClick={() => setPanel('settings')}><SlidersHorizontal size={20} /></button>
+    </header>
+
+    <SidePanel side="left" open={panel === 'contents'} title="내 서재" onClose={closePanel}>
+      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} />
+    </SidePanel>
+
+    <main className="reading-main" inert={panel !== null}>
+      <div className="reading-context"><span>{arc.title}<ChevronRight size={12} />{arc.subtitle}</span><span>{String(chapterIndex + 1).padStart(2, '0')} <span className="muted">/ {String(book.chapters.length).padStart(2, '0')}</span></span></div>
+      <article className="chapter-body" aria-label={`${chapter.number}화 ${chapter.title}`} onClick={(event) => {
+        if (window.matchMedia('(max-width: 759px)').matches && !window.getSelection()?.toString() && !(event.target as HTMLElement).closest('button, a')) setMenusVisible((current) => !current);
+      }}>
+        <header className="chapter-heading"><p className="eyebrow">CHAPTER {String(chapter.number).padStart(2, '0')}</p><h1>{chapter.title}</h1><div className="chapter-metadata"><span>제{chapter.number}화</span><span className="metadata-dot">·</span><span>약 {Math.max(1, Math.ceil(chapter.paragraphs.reduce((sum, item) => sum + item.text.length, 0) / 400))}분 분량</span><span className="demo-label">DEMO</span></div><span className="chapter-rule" /></header>
+        <div id="reader-text" className="reader-text" tabIndex={-1}>{chapter.paragraphs.map((paragraph) => {
+          const saved = bookmarks.some((item) => item.chapterId === chapter.id && item.paragraphId === paragraph.id);
+          return <div className={`paragraph ${saved ? 'is-bookmarked' : ''}`} key={paragraph.id} id={paragraph.id} data-paragraph>
+            <p>{paragraph.text}</p><button className="paragraph-bookmark" aria-label={`문단 ${chapter.paragraphs.indexOf(paragraph) + 1} 북마크 ${saved ? '해제' : '저장'}`} aria-pressed={saved} onClick={(event) => { event.stopPropagation(); toggleBookmark(paragraph.id); }}><Bookmark size={16} fill={saved ? 'currentColor' : 'none'} strokeWidth={1.5} /></button>
+          </div>;
+        })}</div>
+        <div className="chapter-end"><span>✧</span><p>이야기는 다음 페이지로 이어집니다.</p></div>
+        <nav className="chapter-navigation" aria-label="본문 하단 화 이동"><button disabled={!previous} onClick={() => previous && navigate(previous.id)}><ArrowLeft size={17} /><span><small>이전 화</small>{previous?.title ?? '첫 번째 이야기'}</span></button><button disabled={!next} onClick={() => next && navigate(next.id)}><span><small>다음 화</small>{next?.title ?? '마지막 이야기'}</span><ArrowRight size={17} /></button></nav>
+        <p className="demo-notice">이 본문은 뷰어 시연을 위해 작성한 창작 샘플입니다.<br />실제 소설 원문이나 번역문을 포함하지 않습니다.</p>
+      </article>
+    </main>
+
+    <SidePanel side="right" open={panel === 'settings'} title="읽기 설정" onClose={closePanel}><ReaderSettings settings={settings} onChange={reader.updateSettings} /></SidePanel>
+
+    <footer className="reader-toolbar" inert={panel !== null}>
+      <div className="toolbar-progress" style={{ width: `${reader.percent}%` }} />
+      <button className="toolbar-contents" aria-label="목차 열기" onClick={() => { setTab('contents'); setPanel('contents'); }}><List size={19} /><span>목차</span></button>
+      <div className="toolbar-chapters"><button className="icon-button" aria-label="이전 화" disabled={!previous} onClick={() => previous && navigate(previous.id)}><ChevronLeft size={20} /></button><span>{chapter.number}화 <span className="toolbar-title">· {chapter.title}</span></span><button className="icon-button" aria-label="다음 화" disabled={!next} onClick={() => next && navigate(next.id)}><ChevronRight size={20} /></button></div>
+      <span className="reading-percent" aria-label="현재 화 읽기 진행률">{reader.percent}<small>%</small></span>
+      <button className="mobile-settings icon-button" aria-label="읽기 설정" onClick={() => setPanel('settings')}><SlidersHorizontal size={19} /></button>
+    </footer>
+    {!menusVisible && <button className="show-menus" aria-label="독서 메뉴 표시" onClick={() => setMenusVisible(true)}><List size={16} /></button>}
+    <div className={`toast ${announcement ? 'visible' : ''}`} role="status">{announcement}</div>
+    {reader.storageError && <div className="storage-warning" role="alert">기기 저장 공간 또는 브라우저 설정을 확인해 주세요. 현재 변경 사항은 새로고침하면 사라질 수 있어요.</div>}
+  </div>;
+}
