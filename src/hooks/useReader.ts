@@ -3,12 +3,12 @@ import type { Book, Bookmark, ReaderSettings, ReadingProgress, ReadingAnchor } f
 import { firstCharacterAt, textRange } from '../domain/readingPosition';
 import type { ReaderStorage } from '../services/contracts';
 
-export function useReader(book: Book, storage: ReaderStorage) {
+export function useReader(book: Book, storage: ReaderStorage, initialChapterId?: string) {
   const [settings, setSettings] = useState(() => storage.getSettings());
   const [bookmarks, setBookmarks] = useState(() => storage.getBookmarks(book.id));
   const [initialProgress] = useState(() => storage.getProgress(book.id));
   const [chapterId, setChapterId] = useState(() => {
-    return book.chapters.find((item) => item.id === initialProgress?.chapterId)?.id ?? book.chapters[0].id;
+    return book.chapters.find((item) => item.id === initialProgress?.chapterId)?.id ?? book.chapters.find((item) => item.id === initialChapterId)?.id ?? book.chapters[0].id;
   });
   const [percent, setPercent] = useState(0);
   const [storageError, setStorageError] = useState(false);

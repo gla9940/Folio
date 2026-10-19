@@ -28,13 +28,25 @@ async function run<T>(store: string, mode: IDBTransactionMode, operation: (store
 function validNovel(value: unknown): value is ImportedNovel {
   const novel = value as ImportedNovel | null;
   return !!novel && typeof novel.id === 'string' && typeof novel.title === 'string' && typeof novel.chapterId === 'string' &&
-    !!novel.source && /^https:\/\/(?:www\.)?witchculttranslation\.com\//.test(novel.source.url) && /^[a-f0-9]{64}$/.test(novel.source.hash) &&
+    !!novel.source && (/^https:\/\/(?:www\.)?witchculttranslation\.com\//.test(novel.source.url) ||
+      (['epub', 'txt'].includes(novel.source.kind) && /^folio-file:[a-f0-9]{64}#[^\s]+$/.test(novel.source.url))) && /^[a-f0-9]{64}$/.test(novel.source.hash) &&
     Number.isInteger(novel.source.arc) && Number.isInteger(novel.source.chapter) &&
     Array.isArray(novel.paragraphs) && novel.paragraphs.length > 0 && novel.paragraphs.every((p) => p && typeof p.id === 'string' && typeof p.text === 'string');
 }
 export const novelCache = {
   async list(): Promise<ImportedNovel[]> { return (await run<unknown[]>('novels', 'readonly', (store) => store.getAll())).filter(validNovel); },
-  async save(novel: ImportedNovel) { if (!validNovel(novel)) throw Error('원문 데이터 형식이 올바르지 않습니다.'); await run('novels', 'readwrite', (store) => store.put(novel)); },
+  async save(novel: ImportedNovel) { await this.saveAll([novel]); },
+  async saveAll(novels: ImportedNovel[]) {
+    if (!novels.length || !novels.every(validNovel)) throw Error('원문 데이터 형식이 올바르지 않습니다.');
+    const db = await database();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      const store = tx.objectStore('novels');
+      for (const novel of novels) store.put(novel);
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(Error('파일을 저장하지 못했습니다. 저장 공간을 확인해 주세요.'));
+    });
+  },
   async translation(key: string): Promise<TranslationCache | null> {
     const value = await run<TranslationCache | undefined>('translations', 'readonly', (store) => store.get(key));
     return value?.key === key && Array.isArray(value.chunks) ? value : null;

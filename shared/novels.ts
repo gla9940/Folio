@@ -5,7 +5,7 @@ export interface SourceParagraph { id: string; text: string }
 export interface NovelSource {
   url: string;
   hash: string;
-  kind: 'wct' | 'manual';
+  kind: 'wct' | 'manual' | 'epub' | 'txt';
   importedAt: string;
   arc: number;
   chapter: number;
@@ -18,6 +18,7 @@ export interface ImportedNovel {
   title: string;
   source: NovelSource;
   paragraphs: SourceParagraph[];
+  collection?: { id: string; title: string; author: string; order: number };
 }
 export interface TranslationBatch {
   id: string;
@@ -62,7 +63,7 @@ export async function sha256(text: string): Promise<string> {
 export function normalizeText(text: string): string {
   return text.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
 }
-export async function createNovel(input: { url: string; title: string; texts: string[]; arc: number; chapter: number; kind: 'wct' | 'manual'; attribution?: string; policy?: NovelSource['policy'] }): Promise<ImportedNovel> {
+export async function createNovel(input: { url: string; title: string; texts: string[]; arc: number; chapter: number; kind: NovelSource['kind']; attribution?: string; policy?: NovelSource['policy'] }): Promise<ImportedNovel> {
   const texts = input.texts.map(normalizeText).filter(Boolean);
   if (!texts.length || texts.length > 2500 || texts.join('').length > 150_000 || texts.some((text) => text.length > 6000)) {
     throw new FolioError('SOURCE_SIZE', '본문은 1~2,500문단, 총 15만 자, 문단별 6,000자 이내로 입력해 주세요.');

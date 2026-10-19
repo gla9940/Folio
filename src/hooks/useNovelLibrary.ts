@@ -18,8 +18,8 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 export function novelBook(novel: ImportedNovel, cache: TranslationCache | undefined, language: 'en' | 'ko'): Book {
   const translated = new Map(cache?.chunks.filter((c) => c.status === 'complete').flatMap((c) => c.paragraphs).map((p) => [p.id, p.text]));
   return {
-    id: novel.id, title: novel.title, subtitle: novel.source.attribution, author: 'Tappei Nagatsuki',
-    arcs: [{ id: `arc-${novel.source.arc}`, title: `제${novel.source.arc}장`, subtitle: 'Witch Cult Translations' }],
+    id: novel.id, title: novel.title, subtitle: novel.source.attribution, author: novel.collection?.author ?? 'Tappei Nagatsuki',
+    arcs: [{ id: `arc-${novel.source.arc}`, title: novel.collection ? '전체 목차' : `제${novel.source.arc}장`, subtitle: novel.collection?.title ?? 'Witch Cult Translations' }],
     chapters: [{ id: novel.chapterId, arcId: `arc-${novel.source.arc}`, number: novel.source.chapter, title: novel.title, paragraphs: novel.paragraphs.map((p) => ({ id: p.id, text: language === 'ko' ? translated.get(p.id) ?? p.text : p.text })) }],
   };
 }
@@ -28,6 +28,8 @@ export function useNovelLibrary() {
   const [selectedId, setSelectedId] = useState(SAMPLE_BOOK_ID);
   const [languages, setLanguages] = useState<Record<string, 'en' | 'ko'>>({});
   const [caches, setCaches] = useState<Record<string, TranslationCache>>({});
+  const [readChapters, setReadChapters] = useState<Record<string, boolean>>({});
+  const readRef = useRef<Record<string, boolean>>({});
   const [session, setSession] = useState<ServerSession>({ configured: false, authenticated: false });
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
@@ -39,7 +41,23 @@ export function useNovelLibrary() {
   const cache = selected ? caches[translationKey(selected)] : undefined;
   const complete = !!cache && cache.chunks.length > 0 && cache.chunks.every((chunk) => chunk.status === 'complete');
   const language = selected && complete ? languages[selectedId] ?? 'en' : 'en';
-  const book = selected ? novelBook(selected, cache, language) : sampleBook;
+  const group = selected?.collection;
+  const members = group ? entries.filter((entry) => entry.collection?.id === group.id).sort((a, b) => a.collection!.order - b.collection!.order) : selected ? [selected] : [];
+  const book = selected ? {
+    ...novelBook(selected, cache, language), id: group?.id ?? selected.id, title: group?.title ?? selected.title,
+    chapters: members.flatMap((entry) => {
+      const saved = caches[translationKey(entry)];
+      const translated = !!saved?.chunks.length && saved.chunks.every((chunk) => chunk.status === 'complete');
+      return novelBook(entry, saved, translated ? languages[entry.id] ?? 'en' : 'en').chapters;
+    }),
+  } : sampleBook;
+  const books = entries.filter((entry, index) => !entry.collection || entries.findIndex((other) => other.collection?.id === entry.collection!.id) === index).map((entry) => ({ id: entry.collection?.id ?? entry.id, title: entry.collection?.title ?? entry.title }));
+  const selectionId = group?.id ?? selectedId;
+  const revision = members.map((entry) => `${entry.id}:${entry.source.hash}`).join('|');
+  function status(entry: ImportedNovel) {
+    const saved = caches[translationKey(entry)];
+    return { translated: !!saved?.chunks.length && saved.chunks.every((chunk) => chunk.status === 'complete'), read: !!readChapters[`${entry.id}:${entry.source.hash}`] };
+  }
 
   useEffect(() => {
     let active = true;
@@ -63,10 +81,12 @@ export function useNovelLibrary() {
         }
         const savedId = await novelCache.preference<string>('selected');
         const savedLanguages = await novelCache.preference<Record<string, 'en' | 'ko'>>('languages');
+        const savedRead = await novelCache.preference<Record<string, boolean>>('read-chapters') ?? {};
         if (!active) return;
         setEntries(novels); setCaches(translations);
         if (savedId && novels.some((novel) => novel.id === savedId)) setSelectedId(savedId);
         if (savedLanguages && typeof savedLanguages === 'object') setLanguages(savedLanguages);
+        readRef.current = savedRead; setReadChapters(savedRead);
       } catch (problem) { if (active) setError((problem as Error).message); }
       finally { if (active) setReady(true); }
     })();
@@ -76,14 +96,33 @@ export function useNovelLibrary() {
 
   function stop() { controller.current?.abort(); }
   function select(id: string) {
-    stop(); setSelectedId(id); setError('');
-    void novelCache.savePreference('selected', id).catch((problem) => setError(problem.message));
+    const target = entries.find((entry) => entry.id === id) ?? entries.find((entry) => entry.collection?.id === id);
+    const next = target?.id ?? id;
+    stop(); setSelectedId(next); setError('');
+    void novelCache.savePreference('selected', next).catch((problem) => setError(problem.message));
+  }
+  function activateChapter(chapterId: string) {
+    const target = entries.find((entry) => entry.chapterId === chapterId);
+    if (target && target.id !== selectedId) select(target.id);
+  }
+  function markRead(chapterId: string) {
+    const entry = entries.find((item) => item.chapterId === chapterId);
+    if (!entry) return;
+    const key = `${entry.id}:${entry.source.hash}`;
+    if (readRef.current[key]) return;
+    const next = { ...readRef.current, [key]: true };
+    readRef.current = next; setReadChapters(next);
+    void novelCache.savePreference('read-chapters', next).catch((problem) => setError(problem.message));
   }
   async function add(novel: ImportedNovel) {
+    await addMany([novel]);
+  }
+  async function addMany(novels: ImportedNovel[]) {
     stop();
-    await novelCache.save(novel);
-    setEntries((current) => [...current.filter((entry) => entry.id !== novel.id), novel]);
-    select(novel.id);
+    await novelCache.saveAll(novels);
+    const ids = new Set(novels.map((entry) => entry.id));
+    setEntries((current) => [...current.filter((entry) => !ids.has(entry.id)), ...novels]);
+    select(novels[0].id);
   }
   function setLanguage(value: 'en' | 'ko') {
     if (!selected || (value === 'ko' && !complete)) return;
@@ -139,5 +178,5 @@ export function useNovelLibrary() {
       }
     } finally { if (controller.current === signalController) controller.current = null; setRunning(false); setWaiting(false); }
   }
-  return { ready, book, selected, selectedId, entries, language, cache, complete, session, running, waiting, error, retryAt, add, select, setLanguage, translate, stop, refreshSession };
+  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, language, cache, complete, session, running, waiting, error, retryAt, add, addMany, select, activateChapter, markRead, status, setLanguage, translate, stop, refreshSession };
 }

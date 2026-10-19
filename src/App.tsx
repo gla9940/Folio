@@ -20,12 +20,12 @@ const storage = createLocalReaderStorage();
 export function App() {
   const library = useNovelLibrary();
   if (!library.ready) return <main className="loading-state"><span className="wordmark">Folio<span>.</span></span><p>이야기를 펼치고 있어요.</p></main>;
-  return <Reader key={`${library.book.id}:${library.selected?.source.hash ?? 'sample'}`} library={library} />;
+  return <Reader key={`${library.book.id}:${library.revision}`} library={library} />;
 }
 
 function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
   const book = library.book;
-  const reader = useReader(book, storage);
+  const reader = useReader(book, storage, library.selected?.chapterId);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [panel, setPanel] = useState<'contents' | 'settings' | null>(null);
   const [tab, setTab] = useState<'contents' | 'bookmarks'>('contents');
@@ -41,6 +41,8 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
   const arc = book.arcs.find((item) => item.id === chapter.arcId)!;
   const previous = book.chapters[chapterIndex - 1];
   const next = book.chapters[chapterIndex + 1];
+  useEffect(() => { library.activateChapter(chapter.id); });
+  useEffect(() => { if (reader.percent >= 98) library.markRead(chapter.id); });
 
   useEffect(() => { document.title = `${chapter.title} · Folio`; }, [chapter.title]);
   useEffect(() => {
@@ -54,7 +56,7 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
     return () => window.removeEventListener('resize', resize);
   }, [panel]);
 
-  function navigate(id: string, paragraphId?: string) { reader.navigate(id, paragraphId); closePanel(); setMenusVisible(true); }
+  function navigate(id: string, paragraphId?: string) { library.activateChapter(id); reader.navigate(id, paragraphId); closePanel(); setMenusVisible(true); }
   function toggleBookmark(id: string) { const added = reader.toggleBookmark(id); setAnnouncement(added ? '북마크에 문단을 담았어요.' : '북마크를 삭제했어요.'); }
   function removeBookmark(bookmark: BookmarkModel) {
     reader.removeBookmark(bookmark.id);
@@ -65,7 +67,7 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
   const chapterEnding = <>
     <div className="chapter-end"><span>✧</span><p>이야기는 다음 페이지로 이어집니다.</p></div>
     <nav className="chapter-navigation" aria-label="본문 하단 화 이동"><button disabled={!previous} onClick={() => previous && navigate(previous.id)}><ArrowLeft size={17} /><span><small>이전 화</small>{previous?.title ?? '첫 번째 이야기'}</span></button><button disabled={!next} onClick={() => next && navigate(next.id)}><span><small>다음 화</small>{next?.title ?? '마지막 이야기'}</span><ArrowRight size={17} /></button></nav>
-    {library.selected ? <p className="demo-notice">{library.selected.source.attribution}<br /><a href={library.selected.source.url} target="_blank" rel="noopener noreferrer">원본 출처</a>{library.language === 'ko' ? ' · Gemini AI 번역 (검수되지 않음)' : ' · 영어 원문'}</p> : <p className="demo-notice">이 본문은 뷰어 시연을 위해 작성한 창작 샘플입니다.<br />실제 소설 원문이나 번역문을 포함하지 않습니다.</p>}
+    {library.selected ? <p className="demo-notice">{library.selected.source.attribution}<br />{library.selected.source.url.startsWith('https://') && <a href={library.selected.source.url} target="_blank" rel="noopener noreferrer">원본 출처</a>}{library.language === 'ko' ? ' · Gemini AI 번역 (검수되지 않음)' : ' · 원문'}</p> : <p className="demo-notice">이 본문은 뷰어 시연을 위해 작성한 창작 샘플입니다.<br />실제 소설 원문이나 번역문을 포함하지 않습니다.</p>}
   </>;
   return <div className={`reader-app ${paged ? 'paged-mode' : ''} ${menusVisible ? 'menus-visible' : 'menus-hidden'}`} style={textStyle}>
     <a className="skip-link" href="#reader-text">본문으로 건너뛰기</a>
@@ -77,7 +79,7 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
     </header>
 
     <SidePanel side="left" open={panel === 'contents'} title="내 서재" onClose={closePanel}>
-      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} library={{ selectedId: library.selectedId, entries: [{ id: SAMPLE_BOOK_ID, title: `샘플 · ${sampleBook.title}` }, ...library.entries.map((entry) => ({ id: entry.id, title: entry.title }))], onSelect: (id) => { reader.capturePosition(); library.select(id); closePanel(); }, onOpen: openLibrary }} />
+      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} chapterStates={Object.fromEntries(library.members.map((entry) => [entry.chapterId, { ...library.status(entry), url: entry.source.url.startsWith('https://') ? entry.source.url : undefined }]))} library={{ selectedId: library.selectionId, entries: [{ id: SAMPLE_BOOK_ID, title: `샘플 · ${sampleBook.title}` }, ...library.books], onSelect: (id) => { reader.capturePosition(); library.select(id); closePanel(); }, onOpen: openLibrary }} />
     </SidePanel>
 
     <main className={`reading-main ${paged ? 'paged-main' : ''}`} inert={panel !== null} onClick={(event) => {
