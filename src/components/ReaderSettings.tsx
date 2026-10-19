@@ -1,6 +1,7 @@
 import { AlignJustify, Minus, Moon, Plus, RotateCcw, Sun } from 'lucide-react';
 import type { ReaderSettings as Settings, Theme } from '../domain/models';
 import { DEFAULT_SETTINGS } from '../services/localReaderStorage';
+import { PwaControls } from './PwaControls';
 
 interface Props { settings: Settings; onChange: (update: Partial<Settings>) => void }
 export function ReaderSettings({ settings, onChange }: Props) {
@@ -36,5 +37,6 @@ export function ReaderSettings({ settings, onChange }: Props) {
     <div className="type-preview" aria-hidden="true"><AlignJustify size={16} /><span>이야기에 머무는 시간</span></div>
     <button className="reset-settings" onClick={() => onChange({ ...DEFAULT_SETTINGS })}><RotateCcw size={13} />기본 설정으로</button>
     <p className="settings-footnote">편안한 독서 환경을 찾아보세요.<br />설정은 이 기기에 자동으로 저장돼요.</p>
+    <PwaControls />
   </div>;
 }

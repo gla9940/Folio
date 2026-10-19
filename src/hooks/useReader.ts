@@ -94,9 +94,16 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
       setPositionRequest(latestPosition.current ? { ...latestPosition.current } : null);
     };
     const flush = () => savePosition();
+    const beforeUpdate = (event: Event) => {
+      savePosition();
+      if (latestPosition.current && !storage.saveProgress(latestPosition.current)) {
+        event.preventDefault(); setStorageError(true);
+      }
+    };
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('pagehide', flush);
+    window.addEventListener('folio:before-update', beforeUpdate);
     window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     const mutationObserver = new MutationObserver((records) => {
@@ -113,6 +120,7 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
       clearTimeout(timer);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('pagehide', flush);
+      window.removeEventListener('folio:before-update', beforeUpdate);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       mutationObserver.disconnect();

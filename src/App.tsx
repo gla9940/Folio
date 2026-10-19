@@ -14,6 +14,8 @@ import { useNovelLibrary } from './hooks/useNovelLibrary';
 import { LibraryDialog } from './components/LibraryDialog';
 import { ReaderText } from './components/ReaderText';
 import { LibraryDiagnostics } from './components/LibraryDiagnostics';
+import { PwaControls, PwaUpdateNotice } from './components/PwaControls';
+import { usePwa } from './services/pwa';
 
 const storage = createLocalReaderStorage();
 
@@ -21,7 +23,7 @@ export function App() {
   const library = useNovelLibrary();
   const [libraryTab, setLibraryTab] = useState<'books' | 'file' | null>(null);
   if (!library.ready) return <main className="loading-state" translate="no" lang="ko"><span className="wordmark">Folio<span>.</span></span><p>이야기를 펼치고 있어요.</p></main>;
-  return <>{library.book ? <Reader key={`${library.book.id}:${library.revision}`} book={library.book} library={library} libraryOpen={libraryTab !== null} onOpenLibrary={setLibraryTab} /> : <EmptyLibrary library={library} onOpenLibrary={setLibraryTab} />}{libraryTab && <LibraryDialog library={library} initialTab={libraryTab} onClose={() => setLibraryTab(null)} />}</>;
+  return <>{library.book ? <Reader key={`${library.book.id}:${library.revision}`} book={library.book} library={library} libraryOpen={libraryTab !== null} onOpenLibrary={setLibraryTab} /> : <EmptyLibrary library={library} onOpenLibrary={setLibraryTab} />}{libraryTab && <LibraryDialog library={library} initialTab={libraryTab} onClose={() => setLibraryTab(null)} />}<PwaUpdateNotice /></>;
 }
 
 function EmptyLibrary({ library, onOpenLibrary }: { library: ReturnType<typeof useNovelLibrary>; onOpenLibrary: (tab: 'books' | 'file') => void }) {
@@ -36,11 +38,12 @@ function EmptyLibrary({ library, onOpenLibrary }: { library: ReturnType<typeof u
   }, []);
   return <main className="empty-library notranslate" translate="no" lang="ko">
     <header><BookOpen size={23} strokeWidth={1.5} /><span className="wordmark">Folio<span>.</span></span></header>
-    <section aria-labelledby="empty-library-title"><span className="eyebrow">YOUR PRIVATE LIBRARY</span><h1 id="empty-library-title">{unavailable ? '저장된 서재를 확인해 주세요.' : '등록된 책이 없습니다.'}</h1><p>{unavailable ? '기존 데이터를 지우거나 초기화하지 말고 아래 저장소 진단을 확인해 주세요.' : '읽고 싶은 이야기를 나만의 서재에 담아보세요.'}</p><div className="empty-library-actions"><button onClick={() => onOpenLibrary('file')}>EPUB / TXT 파일 등록</button><button onClick={() => onOpenLibrary('books')}>서재 관리</button></div>{library.error && <p className="library-error" role="alert">{library.error}</p>}<LibraryDiagnostics library={library} /></section>
+    <section aria-labelledby="empty-library-title"><span className="eyebrow">YOUR PRIVATE LIBRARY</span><h1 id="empty-library-title">{unavailable ? '저장된 서재를 확인해 주세요.' : '등록된 책이 없습니다.'}</h1><p>{unavailable ? '기존 데이터를 지우거나 초기화하지 말고 아래 저장소 진단을 확인해 주세요.' : '읽고 싶은 이야기를 나만의 서재에 담아보세요.'}</p><div className="empty-library-actions"><button onClick={() => onOpenLibrary('file')}>EPUB / TXT 파일 등록</button><button onClick={() => onOpenLibrary('books')}>서재 관리</button></div>{library.error && <p className="library-error" role="alert">{library.error}</p>}<LibraryDiagnostics library={library} /><PwaControls /></section>
   </main>;
 }
 
 function Reader({ book, library, libraryOpen, onOpenLibrary }: { book: Book; library: ReturnType<typeof useNovelLibrary>; libraryOpen: boolean; onOpenLibrary: (tab: 'books' | 'file') => void }) {
+  const pwa = usePwa();
   const reader = useReader(book, storage, library.selected?.chapterId);
   const [panel, setPanel] = useState<'contents' | 'settings' | null>(null);
   const [tab, setTab] = useState<'contents' | 'bookmarks'>('contents');
@@ -92,7 +95,7 @@ function Reader({ book, library, libraryOpen, onOpenLibrary }: { book: Book; lib
     <header className="topbar notranslate" translate="no" lang="ko" inert={panel !== null}>
       <div className="brand"><BookOpen size={21} strokeWidth={1.5} /><span className="wordmark">Folio<span>.</span></span><span className="brand-divider" /><span className="brand-caption">나만의 작은 서재</span></div>
       <div className="topbar-book">{book.title}<span>개인 서재</span></div>
-      <div className={`save-state ${reader.storageError ? 'has-error' : ''}`}>{reader.storageError ? <CloudOff size={14} /> : <Check size={14} />}<span>{reader.storageError ? '기기 저장 불가' : '이 기기에 자동 저장'}</span></div>
+      <div className={`save-state ${reader.storageError ? 'has-error' : ''}`}>{reader.storageError ? <CloudOff size={14} /> : <Check size={14} />}<span>{reader.storageError ? '기기 저장 불가' : pwa.online ? '이 기기에 자동 저장' : '오프라인 · 기기에 자동 저장'}</span></div>
       <button className="icon-button compact-settings" aria-label="읽기 설정 열기" onClick={() => setPanel('settings')}><SlidersHorizontal size={20} /></button>
     </header>
 

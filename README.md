@@ -11,9 +11,24 @@ npm run build
 npm run preview
 npm test
 npm run test:e2e
+npm run test:pwa
 ```
 
 Node.js 22.12 이상 권장. Vercel에서 Framework Preset **Vite**, Build Command **npm run build**, Output Directory **dist**로 배포합니다. 서버리스 함수와 별도 환경변수는 없습니다. 브라우저 테스트는 설치된 Google Chrome을 기본으로 사용하며, 다른 설치 환경은 `PLAYWRIGHT_CHANNEL`로 지정합니다.
+
+## PWA 설치와 오프라인 독서
+
+기존 배포 주소 **https://folio-dusky-xi.vercel.app/** 그대로 사용합니다. 앱 ID·시작 주소·Service Worker 범위는 같은 Origin의 `/`입니다. 별도 서버·로그인·환경변수는 없습니다.
+
+- 빈 서재, 서재 관리, 읽기 설정의 **앱 설치 · 오프라인**에서 준비 상태를 볼 수 있습니다. Chrome이 설치 가능 이벤트를 제공하면 **Folio 앱 설치**가 표시됩니다. 주소창/브라우저 메뉴 설치도 사용할 수 있습니다. [Chrome 설치 조건](https://web.dev/articles/install-criteria)을 따르므로 방문만으로 설치 안내가 반드시 즉시 표시되지는 않습니다.
+- iOS Safari는 공유 → 홈 화면에 추가를 사용합니다. 설치형은 주소창을 숨기는 standalone 모드입니다. Android 기본 스플래시는 manifest의 이름·아이콘·세피아 배경색으로 구성합니다. 실기기/OS 설치와 스플래시는 별도 확인이 필요합니다.
+- 최초 온라인 접속 후 **오프라인 준비 완료**를 확인하세요. 같은 브라우저/프로필에서 인터넷 없이 새로고침·EPUB/TXT 등록·서재/목차·가로/세로 읽기·북마크·설정을 사용할 수 있습니다. 기존 IndexedDB/localStorage를 사용하며 외부 원문 링크와 번역 서비스는 오프라인 제공 대상이 아닙니다.
+- 설치형에서는 번역 메뉴가 제한될 수 있으므로 Chrome 번역이 필요하면 같은 주소를 브라우저에서 여세요. [WebKit 안내](https://webkit.org/blog/14787/webkit-features-in-safari-17-2/)처럼 iOS 홈 화면 앱과 Safari의 로컬 저장소가 분리될 수 있습니다. 설치 후 서재를 확인하세요. 빈 서재를 이유로 데이터를 초기화하거나 자동 복구하지 않습니다.
+- 새 버전은 **업데이트 · 새로고침** 또는 **읽던 위치 저장 후 업데이트**로 동의할 때 적용합니다. **나중에**를 선택해 계속 읽을 수 있습니다. 위치 저장 실패나 다른 Folio 창이 열려 있으면 적용을 보류합니다. [Chrome의 동의 후 업데이트 흐름](https://developer.chrome.com/docs/workbox/handling-service-worker-updates)을 따르며 독서 중 자동 새로고침하지 않습니다.
+
+빌드 시 정확한 앱 파일의 SHA-256으로 `sw.js`와 캐시 목록을 생성합니다. 앱 파일 13개 약 1.29MiB만 준비하며 로컬 WOFF2 네 파일도 포함합니다. 본문·외부 사이트·임의 요청을 자동 캐싱하지 않습니다. 설치 중 파일이 누락되거나 해시가 다르면 기존 버전을 보존합니다. 현재/직전 Folio 앱 캐시만 유지하고 더 오래된 앱 캐시만 정리하며 다른 캐시·IndexedDB·localStorage는 자동 삭제하지 않습니다. Vercel은 서비스 워커/manifest 캐시 재검사를 강제하고 앱은 온라인 복귀·화면 복귀·5분 간격으로 업데이트를 확인합니다.
+
+`npm run dev`에서는 Service Worker를 등록하지 않습니다. PWA는 `npm run build && npm run preview`로 확인합니다. `npm run test:pwa`는 프로덕션 미리보기와 격리된 Chrome 프로필로 설치 조건·오프라인 독서·버전 교체·실패 업데이트·여러 창·위치 저장 실패를 검증합니다. 이번 작업에서 새 백업/복원 기능은 추가하지 않았습니다.
 
 ## 서재와 독서
 

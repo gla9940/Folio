@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Folio",
+  "short_name": "Folio",
+  "description": "나만의 속도로 읽는 EPUB·TXT 서재",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f1e8",
+  "theme_color": "#f5f1e8",
+  "icons": [
+    {"src": "/icons/folio-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/icons/folio-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/icons/folio-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
