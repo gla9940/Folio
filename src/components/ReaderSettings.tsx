@@ -7,6 +7,13 @@ export function ReaderSettings({ settings, onChange }: Props) {
   const themes: { id: Theme; label: string }[] = [{ id: 'light', label: '라이트' }, { id: 'sepia', label: '세피아' }, { id: 'dark', label: '다크' }];
   return <div className="settings-content">
     <section className="setting-group">
+      <h3>읽기 방식</h3>
+      <div className="reading-mode-options" role="group" aria-label="읽기 방식">
+        <button aria-pressed={settings.readingMode === 'scroll'} onClick={() => onChange({ readingMode: 'scroll' })}>세로 스크롤</button>
+        <button aria-pressed={settings.readingMode === 'paged'} onClick={() => onChange({ readingMode: 'paged' })}>가로 페이지</button>
+      </div>
+    </section>
+    <section className="setting-group">
       <h3>화면 테마</h3>
       <div className="theme-options">{themes.map(({ id, label }) => <button key={id} className={`theme-option ${settings.theme === id ? 'selected' : ''}`} onClick={() => onChange({ theme: id })} aria-pressed={settings.theme === id}>
         <span className={`theme-swatch ${id}`}>{id === 'dark' ? <Moon size={19} /> : <Sun size={20} />}</span><span>{label}</span>

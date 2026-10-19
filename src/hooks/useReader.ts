@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Book, Bookmark, ReaderSettings, ReadingProgress } from '../domain/models';
+import type { Book, Bookmark, ReaderSettings, ReadingProgress, ReadingAnchor } from '../domain/models';
+import { firstCharacterAt, textRange } from '../domain/readingPosition';
 import type { ReaderStorage } from '../services/contracts';
 
 export function useReader(book: Book, storage: ReaderStorage) {
@@ -12,64 +13,98 @@ export function useReader(book: Book, storage: ReaderStorage) {
   const [percent, setPercent] = useState(0);
   const [storageError, setStorageError] = useState(false);
   const pendingPosition = useRef<ReadingProgress | null>(initialProgress);
+  const latestPosition = useRef<ReadingProgress | null>(initialProgress);
+  const [positionRequest, setPositionRequest] = useState(initialProgress);
+  const restoreByCharacter = useRef(initialProgress?.readingMode === 'paged');
   const ready = useRef(false);
   const chapter = book.chapters.find((item) => item.id === chapterId)!;
   const chapterIndex = book.chapters.indexOf(chapter);
   const report = useCallback((success: boolean) => { if (!success) setStorageError(true); }, []);
 
   const savePosition = useCallback(() => {
-    if (!ready.current) return;
+    if (!ready.current || settings.readingMode === 'paged') return;
     const paragraphs = Array.from(document.querySelectorAll<HTMLElement>('[data-paragraph]'));
     const anchor = paragraphs.find((element) => element.getBoundingClientRect().bottom > 100);
-    report(storage.saveProgress({
+    const progress: ReadingProgress = {
       bookId: book.id, chapterId, scrollY: window.scrollY,
       paragraphId: anchor?.id ?? null,
       paragraphOffset: anchor?.getBoundingClientRect().top ?? 0,
+      characterOffset: anchor ? firstCharacterAt(anchor, (rect) => rect.bottom <= 100) : 0,
+      readingMode: 'scroll',
       updatedAt: new Date().toISOString(),
-    }));
+    };
+    latestPosition.current = progress;
+    report(storage.saveProgress(progress));
+  }, [book.id, chapterId, report, storage, settings.readingMode]);
+
+  const savePagePosition = useCallback((anchor: ReadingAnchor, progressPercent: number) => {
+    const progress: ReadingProgress = {
+      bookId: book.id, chapterId, ...anchor, paragraphOffset: 120,
+      scrollY: 0, readingMode: 'paged', updatedAt: new Date().toISOString(),
+    };
+    latestPosition.current = progress;
+    setPercent(progressPercent);
+    report(storage.saveProgress(progress));
   }, [book.id, chapterId, report, storage]);
 
   useLayoutEffect(() => {
     ready.current = false;
+    if (settings.readingMode === 'paged') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      return;
+    }
     let cancelled = false;
     let frame = 0;
     void document.fonts.ready.then(() => {
       if (cancelled) return;
       frame = requestAnimationFrame(() => {
-        const saved = pendingPosition.current;
+        const saved = pendingPosition.current ?? latestPosition.current;
         const anchor = saved?.paragraphId ? document.getElementById(saved.paragraphId) : null;
+        const character = anchor && saved ? textRange(anchor, saved.characterOffset ?? 0) : null;
         const top = saved?.chapterId === chapterId
-          ? anchor ? window.scrollY + anchor.getBoundingClientRect().top - saved.paragraphOffset : saved.scrollY
+          ? anchor ? window.scrollY + (restoreByCharacter.current && character
+            ? character.getBoundingClientRect().top - 120
+            : anchor.getBoundingClientRect().top - saved.paragraphOffset) : saved.scrollY
           : 0;
         window.scrollTo({ top, behavior: 'instant' });
         pendingPosition.current = null;
+        restoreByCharacter.current = false;
         ready.current = true;
         setPercent(Math.round(window.scrollY / Math.max(1, document.documentElement.scrollHeight - window.innerHeight) * 100));
         savePosition();
       });
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); ready.current = false; };
-  }, [chapterId, savePosition]);
+  }, [chapterId, savePosition, positionRequest, settings.readingMode, settings.fontSize, settings.lineHeight, settings.contentWidth]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onScroll = () => {
+      if (settings.readingMode === 'paged' || !ready.current) return;
       setPercent(Math.min(100, Math.round(window.scrollY / Math.max(1, document.documentElement.scrollHeight - window.innerHeight) * 100)));
       clearTimeout(timer);
       timer = setTimeout(savePosition, 180);
+    };
+    const onResize = () => {
+      if (settings.readingMode !== 'scroll' || !ready.current) return;
+      pendingPosition.current = latestPosition.current;
+      restoreByCharacter.current = true;
+      setPositionRequest(latestPosition.current ? { ...latestPosition.current } : null);
     };
     const flush = () => savePosition();
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('pagehide', flush);
+    window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('pagehide', flush);
+      window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [savePosition]);
+  }, [savePosition, settings.readingMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
@@ -77,18 +112,22 @@ export function useReader(book: Book, storage: ReaderStorage) {
     report(storage.saveSettings(settings));
   }, [settings, report, storage]);
 
-  function updateSettings(update: Partial<ReaderSettings>) { setSettings((current) => ({ ...current, ...update })); }
+  function updateSettings(update: Partial<ReaderSettings>) {
+    if (update.readingMode !== undefined || update.fontSize !== undefined || update.lineHeight !== undefined || update.contentWidth !== undefined) {
+      savePosition();
+      pendingPosition.current = latestPosition.current;
+      restoreByCharacter.current = true;
+      setPositionRequest(latestPosition.current);
+    }
+    setSettings((current) => ({ ...current, ...update }));
+  }
   function navigate(id: string, paragraphId?: string) {
     savePosition();
-    if (id === chapterId) {
-      if (paragraphId) {
-        const target = document.getElementById(paragraphId);
-        if (target) window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - 120, behavior: 'instant' });
-        savePosition();
-      }
-      return;
-    }
-    pendingPosition.current = { bookId: book.id, chapterId: id, scrollY: 0, paragraphId: paragraphId ?? null, paragraphOffset: 120, updatedAt: new Date().toISOString() };
+    if (id === chapterId && !paragraphId) return;
+    pendingPosition.current = { bookId: book.id, chapterId: id, scrollY: 0, paragraphId: paragraphId ?? null, paragraphOffset: 120, characterOffset: 0, readingMode: settings.readingMode, updatedAt: new Date().toISOString() };
+    latestPosition.current = pendingPosition.current;
+    restoreByCharacter.current = false;
+    setPositionRequest(pendingPosition.current);
     ready.current = false;
     setChapterId(id);
   }
@@ -108,5 +147,5 @@ export function useReader(book: Book, storage: ReaderStorage) {
     setBookmarks(next);
     report(storage.saveBookmarks(book.id, next));
   }
-  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError };
+  return { settings, updateSettings, bookmarks, chapter, chapterIndex, navigate, toggleBookmark, removeBookmark, percent, storageError, positionRequest, savePagePosition };
 }

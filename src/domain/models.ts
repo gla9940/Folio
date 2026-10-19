@@ -1,10 +1,18 @@
 export type Theme = 'sepia' | 'light' | 'dark';
+export type ReadingMode = 'scroll' | 'paged';
+
+export interface ReadingAnchor {
+  paragraphId: string | null;
+  characterOffset: number;
+  atChapterEnd?: boolean;
+}
 
 export interface ReaderSettings {
   theme: Theme;
   fontSize: number;
   lineHeight: number;
   contentWidth: number;
+  readingMode: ReadingMode;
 }
 
 export interface Paragraph { id: string; text: string }
@@ -30,6 +38,9 @@ export interface ReadingProgress {
   scrollY: number;
   paragraphId: string | null;
   paragraphOffset: number;
+  characterOffset?: number;
+  readingMode?: ReadingMode;
+  atChapterEnd?: boolean;
   updatedAt: string;
 }
 export interface Bookmark {
