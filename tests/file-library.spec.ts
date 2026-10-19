@@ -168,3 +168,63 @@ test.describe('mobile file library', () => {
     expect(apiRequests).toEqual([]);
   });
 });
+
+test('identical EPUB re-registration preserves original records, chapter-two anchor and bookmarks; conflicts roll back', async ({page}) => {
+  await start(page); await openFiles(page);
+  const bytes = epub(); await upload(page, 'first-name.epub', bytes);
+  await page.getByRole('button', {name: '2개 화 서재에 등록'}).click();
+  await expect(page.locator('.chapter-heading h1')).toHaveText('Chapter 1: The River');
+  await page.getByRole('button', {name: '문단 1 북마크 저장', exact: true}).click();
+  await page.getByRole('button', {name: '다음 화', exact: true}).click();
+  await page.evaluate(() => scrollTo(0, 780));
+  const bookId = await page.getByLabel('서재 책 선택').inputValue();
+  await expect.poll(() => page.evaluate(id => JSON.parse(localStorage.getItem(`folio:v1:progress:${id}`)!).scrollY, bookId)).toBe(780);
+  await openFiles(page);
+  const read = () => page.evaluate(async id => {
+    const raw = await new Promise<unknown[]>(resolve => {const req = indexedDB.open('folio-library-v1'); req.onsuccess = () => {const db = req.result, tx = db.transaction('novels', 'readonly'), all = tx.objectStore('novels').getAll(); tx.oncomplete = () => {resolve(all.result); db.close();};};});
+    return {raw, bookmarks: localStorage.getItem(`folio:v1:bookmarks:${id}`), progress: JSON.parse(localStorage.getItem(`folio:v1:progress:${id}`)!)};
+  }, bookId);
+  const before = await read();
+  await upload(page, 'different-filename.epub', bytes);
+  await page.getByRole('button', {name: '2개 화 서재에 등록'}).click();
+  await expect(page.locator('.chapter-heading h1')).toHaveText('Chapter 2: The Bridge');
+  const after = await read();
+  expect(after.raw).toEqual(before.raw); expect(after.bookmarks).toBe(before.bookmarks);
+  expect(after.progress.chapterId).toBe(before.progress.chapterId); expect(after.progress.paragraphId).toBe(before.progress.paragraphId);
+  expect(after.progress.characterOffset).toBe(before.progress.characterOffset);
+  await page.reload(); await expect(page.locator('.chapter-heading h1')).toHaveText('Chapter 2: The Bridge');
+  await expect(page.getByRole('tab', {name: '북마크 1'})).toBeVisible();
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(700);
+  const conflict = await page.evaluate(async () => {
+    const modulePath = '/src/services/novelCache.ts'; const {novelCache} = await import(modulePath);
+    const originals = await novelCache.list();
+    try {
+      await novelCache.saveAll([{...originals[0], id: 'new-before-conflict'}, {...originals[1], paragraphs: originals[1].paragraphs.map((p: {id: string; text: string}, index: number) => index ? p : {...p, text: 'Different content'})}]);
+      return '';
+    } catch (error) {return (error as Error).message;}
+  });
+  expect(conflict).toContain('덮어쓰지 않았습니다');
+  expect((await read()).raw).toEqual(before.raw);
+});
+
+test('re-registering identical EPUB into a zero-novels library reconnects retained bookmarks and paragraph location', async ({page}) => {
+  await start(page); const bytes = epub(), parsed = await parse(page, 'original.epub', bytes);
+  expect(parsed.error).toBe('');
+  const novels = parsed.novels, bookId = novels[0].collection.id, chapter = novels[1];
+  await page.evaluate(async ({bookId, chapter}) => {
+    const path = '/src/services/novelCache.ts'; const {novelCache} = await import(path);
+    await novelCache.savePreference('selected', chapter.id);
+    localStorage.setItem('folio:v1:settings', JSON.stringify({theme: 'dark', fontSize: 20, lineHeight: 2, contentWidth: 680, readingMode: 'paged'}));
+    localStorage.setItem(`folio:v1:progress:${bookId}`, JSON.stringify({bookId, chapterId: chapter.chapterId, paragraphId: chapter.paragraphs[12].id, characterOffset: 0, paragraphOffset: 120, scrollY: 0, readingMode: 'paged', updatedAt: '2026-10-19T00:00:00Z'}));
+    localStorage.setItem(`folio:v1:bookmarks:${bookId}`, JSON.stringify([{id: 'retained', bookId, chapterId: chapter.chapterId, paragraphId: chapter.paragraphs[12].id, excerpt: 'Retained bookmark', createdAt: '2026-10-19'}]));
+  }, {bookId, chapter});
+  const before = await page.evaluate(id => ({bookmark: localStorage.getItem(`folio:v1:bookmarks:${id}`), settings: localStorage.getItem('folio:v1:settings')}), bookId);
+  await page.reload(); await expect(page.getByRole('heading', {name: '등록된 책이 없습니다.', exact: true})).toBeVisible();
+  await openFiles(page); await upload(page, 'renamed-original.epub', bytes);
+  await page.getByRole('button', {name: '2개 화 서재에 등록'}).click();
+  await expect(page.locator('.chapter-heading h1')).toHaveText(chapter.title);
+  await expect(page.getByRole('tab', {name: '북마크 1'})).toBeVisible();
+  const after = await page.evaluate(id => ({bookmark: localStorage.getItem(`folio:v1:bookmarks:${id}`), settings: localStorage.getItem('folio:v1:settings'), progress: JSON.parse(localStorage.getItem(`folio:v1:progress:${id}`)!)}), bookId);
+  expect(after.bookmark).toBe(before.bookmark); expect(after.settings).toBe(before.settings);
+  expect(after.progress.chapterId).toBe(chapter.chapterId); expect(after.progress.paragraphId).toBe(chapter.paragraphs[12].id);
+});

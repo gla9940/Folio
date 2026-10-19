@@ -338,3 +338,11 @@ input[type='range'] { display: block; width: 100%; margin: 0; height: 20px; acce
 .empty-library-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 .empty-library-actions button { min-height: 48px; border: 1px solid var(--line); border-radius: 4px; padding: 12px 18px; color: var(--accent); font-size: 13px; }
 .empty-library-actions button:first-child { border-color: var(--accent); }
+.library-diagnostics { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; font-size: 12px; overflow-wrap: anywhere; }
+.library-diagnostics summary { cursor: pointer; min-height: 36px; color: var(--muted); padding: 8px 0; }
+.library-diagnostic-counts { margin: 14px 0; }
+.library-diagnostic-counts > div { display: flex; gap: 16px; justify-content: space-between; padding: 7px 0; }
+.library-diagnostic-counts dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diagnostic-reasons { padding-left: 20px; line-height: 1.9; color: var(--muted); }
+.diagnostic-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.diagnostic-actions button { min-height: 44px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--accent); }

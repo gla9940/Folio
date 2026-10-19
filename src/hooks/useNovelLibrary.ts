@@ -3,6 +3,7 @@ import type { Book } from '../domain/models';
 import { novelCache } from '../services/novelCache';
 import type { ImportedNovel } from '../../shared/novels';
 import { libraryId, libraryTitle } from '../domain/library';
+import type { LibraryReport } from '../services/savedNovel';
 
 export function novelBook(novel: ImportedNovel): Book {
   return {
@@ -18,6 +19,8 @@ export function useNovelLibrary() {
   const [readChapters, setReadChapters] = useState<Record<string, boolean>>({});
   const readRef = useRef<Record<string, boolean>>({});
   const [error, setError] = useState('');
+  const [report, setReport] = useState<LibraryReport | null>(null);
+  const [diagnosticError, setDiagnosticError] = useState('');
   const [ready, setReady] = useState(false);
   const selected = entries.find((entry) => entry.id === selectedId);
   const group = selected?.collection;
@@ -35,17 +38,23 @@ export function useNovelLibrary() {
     let active = true;
     void (async () => {
       try {
-        const novels = await novelCache.list();
-        const savedId = await novelCache.preference<string>('selected');
-        const savedRead = await novelCache.preference<Record<string, boolean>>('read-chapters') ?? {};
-        const savedTitles = await novelCache.preference<Record<string, string>>('book-titles') ?? {};
+        const snapshot = await novelCache.inspect();
+        const novels = snapshot.novels;
+        const prefs = snapshot.report.database === 'absent' ? [] : await Promise.allSettled([
+          novelCache.preference<unknown>('selected'), novelCache.preference<unknown>('read-chapters'), novelCache.preference<unknown>('book-titles'),
+        ]);
         if (!active) return;
-        setEntries(novels);
-        setTitles(savedTitles);
-        const next = novels.find((novel) => novel.id === savedId || novel.collection?.id === savedId)?.id ?? novels[0]?.id ?? '';
+        const value = (index: number) => prefs[index]?.status === 'fulfilled' ? prefs[index].value : undefined;
+        const savedId = typeof value(0) === 'string' ? value(0) : '';
+        const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+        const savedRead = object(value(1)) ? Object.fromEntries(Object.entries(value(1) as Record<string, unknown>).filter(([, v]) => v === true)) as Record<string, boolean> : {};
+        const savedTitles = object(value(2)) ? Object.fromEntries(Object.entries(value(2) as Record<string, unknown>).filter(([, v]) => typeof v === 'string')) as Record<string, string> : {};
+        setReport(snapshot.report); setEntries(novels); setTitles(savedTitles);
+        const next = novels.find(novel => novel.id === savedId || novel.collection?.id === savedId)?.id ?? novels[0]?.id ?? '';
         setSelectedId(next);
         readRef.current = savedRead; setReadChapters(savedRead);
-        if (savedId !== next) await novelCache.savePreference('selected', next);
+        if (prefs.some(result => result.status === 'rejected')) setError('책 원문은 불러왔지만 일부 서재 설정을 읽지 못했습니다. 저장소 진단을 확인해 주세요.');
+        // Reading an empty/filtered library must not overwrite the saved selection.
       } catch (problem) { if (active) setError((problem as Error).message); }
       finally { if (active) setReady(true); }
     })();
@@ -72,10 +81,15 @@ export function useNovelLibrary() {
     void novelCache.savePreference('read-chapters', next).catch((problem) => setError(problem.message));
   }
   async function addMany(novels: ImportedNovel[]) {
-    await novelCache.saveAll(novels);
-    const ids = new Set(novels.map((entry) => entry.id));
-    setEntries((current) => [...current.filter((entry) => !ids.has(entry.id)), ...novels]);
-    select(novels[0].id);
+    const saved = await novelCache.saveAll(novels);
+    const ids = new Set(saved.map((entry) => entry.id));
+    setEntries((current) => [...current.filter((entry) => !ids.has(entry.id)), ...saved]);
+    select(saved[0].id);
+    await diagnose();
+  }
+  async function diagnose() {
+    try { const snapshot = await novelCache.inspect(); setReport(snapshot.report); setDiagnosticError(''); return snapshot.report; }
+    catch (problem) { setReport(null); setDiagnosticError(problem instanceof Error ? problem.message : '저장소를 확인하지 못했습니다.'); return null; }
   }
   async function renameBook(id: string, value: string) {
     const title = value.trim();
@@ -96,6 +110,7 @@ export function useNovelLibrary() {
     if (targets.some((entry) => entry.id === selectedId)) setSelectedId(fallback);
     try { keys.forEach((key) => window.localStorage.removeItem(key)); }
     catch { throw Error('책은 삭제됐지만 기기 기록을 정리하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.'); }
+    await diagnose();
   }
-  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, error, addMany, select, activateChapter, markRead, status, renameBook, removeBook };
+  return { ready, report, diagnosticError, diagnose, book, selected, selectedId, selectionId, books, members, revision, entries, error, addMany, select, activateChapter, markRead, status, renameBook, removeBook };
 }

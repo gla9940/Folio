@@ -13,6 +13,7 @@ import { useVisualViewport } from './hooks/useVisualViewport';
 import { useNovelLibrary } from './hooks/useNovelLibrary';
 import { LibraryDialog } from './components/LibraryDialog';
 import { ReaderText } from './components/ReaderText';
+import { LibraryDiagnostics } from './components/LibraryDiagnostics';
 
 const storage = createLocalReaderStorage();
 
@@ -20,10 +21,11 @@ export function App() {
   const library = useNovelLibrary();
   const [libraryTab, setLibraryTab] = useState<'books' | 'file' | null>(null);
   if (!library.ready) return <main className="loading-state" translate="no" lang="ko"><span className="wordmark">Folio<span>.</span></span><p>이야기를 펼치고 있어요.</p></main>;
-  return <>{library.book ? <Reader key={`${library.book.id}:${library.revision}`} book={library.book} library={library} libraryOpen={libraryTab !== null} onOpenLibrary={setLibraryTab} /> : <EmptyLibrary error={library.error} onOpenLibrary={setLibraryTab} />}{libraryTab && <LibraryDialog library={library} initialTab={libraryTab} onClose={() => setLibraryTab(null)} />}</>;
+  return <>{library.book ? <Reader key={`${library.book.id}:${library.revision}`} book={library.book} library={library} libraryOpen={libraryTab !== null} onOpenLibrary={setLibraryTab} /> : <EmptyLibrary library={library} onOpenLibrary={setLibraryTab} />}{libraryTab && <LibraryDialog library={library} initialTab={libraryTab} onClose={() => setLibraryTab(null)} />}</>;
 }
 
-function EmptyLibrary({ error, onOpenLibrary }: { error: string; onOpenLibrary: (tab: 'books' | 'file') => void }) {
+function EmptyLibrary({ library, onOpenLibrary }: { library: ReturnType<typeof useNovelLibrary>; onOpenLibrary: (tab: 'books' | 'file') => void }) {
+  const unavailable = library.error || !library.report || library.report.total > 0;
   useEffect(() => {
     const settings = storage.getSettings();
     document.title = '서재 · Folio';
@@ -34,7 +36,7 @@ function EmptyLibrary({ error, onOpenLibrary }: { error: string; onOpenLibrary: 
   }, []);
   return <main className="empty-library notranslate" translate="no" lang="ko">
     <header><BookOpen size={23} strokeWidth={1.5} /><span className="wordmark">Folio<span>.</span></span></header>
-    <section aria-labelledby="empty-library-title"><span className="eyebrow">YOUR PRIVATE LIBRARY</span><h1 id="empty-library-title">등록된 책이 없습니다.</h1><p>읽고 싶은 이야기를 나만의 서재에 담아보세요.</p><div className="empty-library-actions"><button onClick={() => onOpenLibrary('file')}>EPUB / TXT 파일 등록</button><button onClick={() => onOpenLibrary('books')}>서재 관리</button></div>{error && <p className="library-error" role="alert">{error}</p>}</section>
+    <section aria-labelledby="empty-library-title"><span className="eyebrow">YOUR PRIVATE LIBRARY</span><h1 id="empty-library-title">{unavailable ? '저장된 서재를 확인해 주세요.' : '등록된 책이 없습니다.'}</h1><p>{unavailable ? '기존 데이터를 지우거나 초기화하지 말고 아래 저장소 진단을 확인해 주세요.' : '읽고 싶은 이야기를 나만의 서재에 담아보세요.'}</p><div className="empty-library-actions"><button onClick={() => onOpenLibrary('file')}>EPUB / TXT 파일 등록</button><button onClick={() => onOpenLibrary('books')}>서재 관리</button></div>{library.error && <p className="library-error" role="alert">{library.error}</p>}<LibraryDiagnostics library={library} /></section>
   </main>;
 }
 

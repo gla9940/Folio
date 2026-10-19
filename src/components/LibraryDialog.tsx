@@ -4,6 +4,7 @@ import type { useNovelLibrary } from '../hooks/useNovelLibrary';
 import { FileUpload } from './FileUpload';
 import { WctCatalog } from './WctCatalog';
 import { LibraryBooks } from './LibraryBooks';
+import { LibraryDiagnostics } from './LibraryDiagnostics';
 type Library = ReturnType<typeof useNovelLibrary>;
 export function LibraryDialog({ library, onClose, initialTab = 'file' }: { library: Library; onClose: () => void; initialTab?: 'books' | 'file' }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -23,6 +24,7 @@ export function LibraryDialog({ library, onClose, initialTab = 'file' }: { libra
       {tab === 'books' ? <LibraryBooks library={library} onRead={(id) => { library.select(id); onClose(); }} /> : tab === 'catalog' ? <WctCatalog library={library} onRead={(id) => { library.select(id); onClose(); }} /> : <FileUpload busy={busy} perform={perform} onImport={async (novels) => { await library.addMany(novels); onClose(); }} />}
     </div>
     {problem && <p className="library-error" role="alert">{problem}</p>}
+    <LibraryDiagnostics library={library} />
     <p className="field-note">서재는 이 브라우저의 IndexedDB에 저장됩니다. 서버 설정이나 로그인 없이 사용할 수 있습니다.</p>
   </dialog>;
 }
