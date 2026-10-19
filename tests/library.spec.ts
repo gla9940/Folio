@@ -4,7 +4,7 @@ import { createNovel, makeBatches, TRANSLATION_MODEL } from '../shared/novels';
 const SOURCE_URL = 'https://witchculttranslation.com/2021/01/29/arc-7-chapter-2-animal-tracking/';
 // Original test prose; no actual novel text is committed in fixtures.
 const fixture = () => createNovel({ url: SOURCE_URL, title: 'Arc 7, Chapter 2 — Integration Test', arc: 7, chapter: 2, kind: 'wct', texts: Array.from({ length: 70 }, (_, i) => `Paragraph ${i + 1}. A traveler walked beside the river and listened to the quiet sounds of the forest. He stopped to remember the promise he had made that morning.`) });
-type SetupOptions = { failSecond?: number; pauseAfterFirst?: boolean; restricted?: boolean; invalidIds?: boolean };
+type SetupOptions = { failSecond?: number; pauseAfterFirst?: boolean; restricted?: boolean; invalidIds?: boolean; badRequest?: boolean };
 async function setup(page: Page, options: SetupOptions = {}) {
   const novel = await fixture();
   const requests: string[] = [];
@@ -18,6 +18,7 @@ async function setup(page: Page, options: SetupOptions = {}) {
     }
     if (data.action === 'translate') {
       requests.push(data.batch.id);
+      if (options.badRequest) return route.fulfill({ status: 400, json: { error: { code: 'GEMINI_BAD_REQUEST', message: '요청 형식 거절(400). 무료 한도 초과가 아닙니다. 진단 ID: test-diagnostic', retryable: false, diagnosticId: 'test-diagnostic' } } });
       if (requests.length === 2 && options.failSecond && !failed) {
         failed = true;
         return route.fulfill({ status: options.failSecond, json: { error: { code: options.failSecond === 429 ? 'GEMINI_QUOTA' : 'GEMINI_FAILED', message: '테스트 오류: 완료 구간은 보존됩니다.', retryAfter: options.failSecond === 429 ? 60 : 0 } } });
@@ -61,16 +62,46 @@ test('imports one chapter, caches translation in IndexedDB and reloads without g
 });
 
 for (const status of [429, 502]) test(`preserves completed chunks after ${status} and retries only unfinished chunks`, async ({ page }) => {
+  if (status === 429) await page.clock.install();
   const { novel, requests } = await setup(page, { failSecond: status });
   await importFixture(page);
   await page.getByRole('button', { name: '번역하기', exact: true }).click();
   await expect(page.locator('.translation-error')).toContainText('완료 구간은 보존');
   await expect(page.getByRole('progressbar', { name: '번역 진행률' })).toHaveAttribute('value', '1');
   expect(requests).toHaveLength(2);
+  if (status === 429) {
+    await expect(page.getByRole('button', { name: '잠시 후 재시도' })).toBeDisabled();
+    await page.reload();
+    await expect(page.getByRole('button', { name: '잠시 후 재시도' })).toBeDisabled();
+    await page.clock.fastForward(61_000);
+  }
   await page.getByRole('button', { name: '번역 재시도', exact: true }).click();
   await expect(page.getByText('번역 저장됨', { exact: true })).toBeVisible();
   expect(requests.filter((id) => id === makeBatches(novel.paragraphs)[0].id)).toHaveLength(1);
   expect(requests.filter((id) => id === makeBatches(novel.paragraphs)[1].id)).toHaveLength(2);
+});
+
+test('400 stops at one request and persists its retry block without losing the source, position or bookmark', async ({ page }) => {
+  const { novel, requests } = await setup(page, { badRequest: true });
+  await importFixture(page);
+  await page.getByRole('button', { name: '문단 1 북마크 저장', exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 700));
+  await expect.poll(async () => (await progress(page, novel.id))?.scrollY).toBe(700);
+  await page.getByRole('button', { name: '번역하기', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('무료 한도 초과가 아닙니다');
+  await expect(page.getByRole('button', { name: '요청 수정 필요' })).toBeDisabled();
+  expect(requests).toHaveLength(1);
+  await expect(page.getByRole('progressbar', { name: '번역 진행률' })).toHaveAttribute('value', '0');
+  await page.reload();
+  await expect(page.getByRole('button', { name: '요청 수정 필요' })).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('test-diagnostic');
+  await expect(page.locator('[data-paragraph]').first()).toContainText('Paragraph 1.');
+  await expect(page.getByRole('tab', { name: '북마크 1' })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  await page.getByLabel('서재 책 선택').selectOption('rezero-demo');
+  await page.getByLabel('서재 책 선택').selectOption(novel.id);
+  await expect(page.getByRole('button', { name: '요청 수정 필요' })).toBeDisabled();
+  expect(requests).toHaveLength(1);
 });
 
 test('pause and reload resume from durable completed chunks', async ({ page }) => {

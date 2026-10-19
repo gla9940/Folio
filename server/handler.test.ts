@@ -81,4 +81,20 @@ describe('private server API', () => {
     expect((await call(handler, { action: 'translate', batch }, cookie)).status).toBe(429);
     expect(translate).toHaveBeenCalledTimes(1);
   });
+  it('blocks repeated identical 400 requests before another model call without setting a quota cooldown', async () => {
+    const translate = vi.fn().mockRejectedValueOnce(new FolioError('GEMINI_BAD_REQUEST', 'Safe request diagnostic', 400, 0, { retryable: false, diagnosticId: 'safe-diagnostic-id' })).mockResolvedValue([{ id: 'p2', text: '다음 문단이다.' }]);
+    const handler = createHandler({ env, redis: memoryRedis(), translate });
+    const login = await call(handler, { action: 'login', password: env.FOLIO_PASSWORD });
+    const cookie = login.headers['Set-Cookie'].split(';')[0];
+    const batch = { id: 'chunk-0-1', sourceHash: 'a'.repeat(64), paragraphs: [{ id: 'p1', text: 'The traveler waited.' }], before: [], after: [] };
+    for (let i = 0; i < 5; i++) {
+      const result = await call(handler, { action: 'translate', batch }, cookie);
+      expect(result.status).toBe(400);
+      expect(result.data.error).toMatchObject({ code: 'GEMINI_BAD_REQUEST', retryable: false, diagnosticId: 'safe-diagnostic-id' });
+    }
+    expect(translate).toHaveBeenCalledTimes(1);
+    const result = await call(handler, { action: 'translate', batch: { ...batch, paragraphs: [{ id: 'p2', text: 'A different paragraph.' }] } }, cookie);
+    expect(result.status).toBe(200);
+    expect(translate).toHaveBeenCalledTimes(2);
+  });
 });

@@ -17,7 +17,7 @@ export function createRedis(env: NodeJS.ProcessEnv): Redis {
 const LIMIT_SCRIPT = `local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n`;
 export async function limit(redis: Redis, key: string, maximum: number, seconds: number) {
   const count = await redis.command<number>(['EVAL', LIMIT_SCRIPT, 1, `folio:v1:limit:${key}`, seconds]);
-  if (count > maximum) throw new FolioError('RATE_LIMITED', '무료 사용량 보호 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.', 429, seconds);
+  if (count > maximum) throw new FolioError('RATE_LIMITED', 'Folio 자체 요청 제한에 도달했습니다. Gemini 할당량 오류와는 별개입니다. 표시된 재시도 시각 이후 이어서 번역해 주세요.', 429, seconds);
 }
 export async function lock(redis: Redis): Promise<() => Promise<void>> {
   const token = randomUUID();

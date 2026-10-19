@@ -5,7 +5,7 @@ import { createRedis, limit, lock } from './redis.ts';
 import type { Redis } from './redis.ts';
 import { generateTranslation, requireGemini, validateBatch, verifyModel } from './gemini.ts';
 import { importWctChapter } from './source.ts';
-import { FolioError, GLOSSARY_VERSION, TRANSLATION_MODEL, TRANSLATION_VERSION } from '../shared/novels.ts';
+import { FolioError, GLOSSARY_VERSION, TRANSLATION_MODEL, TRANSLATION_VERSION, TRANSLATION_REQUEST_VERSION } from '../shared/novels.ts';
 import type { ImportedNovel, SourceParagraph, TranslationRequest } from '../shared/novels.ts';
 interface Dependencies {
   env: NodeJS.ProcessEnv;
@@ -66,6 +66,15 @@ export function createHandler(overrides: Partial<Dependencies> = {}) {
         const cacheKey = `folio:v1:translated:${hash}`;
         const cached = await redis.command<string | null>(['GET', cacheKey]);
         if (cached) return send({ paragraphs: JSON.parse(cached), cached: true, model: TRANSLATION_MODEL, nextRequestAfterMs: 0 });
+        const rejectedKey = `folio:v1:rejected:${TRANSLATION_REQUEST_VERSION}:${hash}`;
+        const checkRejected = async () => {
+          const rejected = await redis.command<string | null>(['GET', rejectedKey]);
+          if (rejected) {
+            const saved = JSON.parse(rejected) as { message: string; diagnosticId?: string };
+            throw new FolioError('GEMINI_BAD_REQUEST', saved.message, 400, 0, { retryable: false, diagnosticId: saved.diagnosticId });
+          }
+        };
+        await checkRejected();
         const cooldown = await redis.command(['GET', 'folio:v1:gemini-cooldown']);
         if (cooldown) throw new FolioError('GEMINI_QUOTA', 'Gemini 무료 한도 보호로 번역이 일시 중단되었습니다. 완료 구간은 보존됩니다.', 429, 60);
         const release = await lock(redis);
@@ -73,6 +82,7 @@ export function createHandler(overrides: Partial<Dependencies> = {}) {
           // Recheck after acquiring the shared lock to avoid duplicate charges across tabs/instances.
           const afterLock = await redis.command<string | null>(['GET', cacheKey]);
           if (afterLock) return send({ paragraphs: JSON.parse(afterLock), cached: true, model: TRANSLATION_MODEL, nextRequestAfterMs: 0 });
+          await checkRejected();
           await limit(redis, 'translation-minute', 3, 60);
           await limit(redis, `translation-day:${new Date().toISOString().slice(0, 10)}`, 15, 86400);
           const paragraphs = await (overrides.translate ?? generateTranslation)(batch, env);
@@ -80,6 +90,8 @@ export function createHandler(overrides: Partial<Dependencies> = {}) {
           send({ paragraphs, model: TRANSLATION_MODEL, cached: false, nextRequestAfterMs: 21_000 });
         } catch (error) {
           if (error instanceof FolioError && error.code === 'GEMINI_QUOTA') await redis.command(['SET', 'folio:v1:gemini-cooldown', '1', 'EX', error.retryAfter || 60]);
+          // Keep limits intact; repeated rejected requests must not spend more model calls.
+          if (error instanceof FolioError && error.code === 'GEMINI_BAD_REQUEST') await redis.command(['SET', rejectedKey, JSON.stringify({ message: error.message, diagnosticId: error.diagnosticId }), 'EX', 300]);
           throw error;
         } finally { try { await release(); } catch { /* the bounded lock also expires after 55 seconds */ } }
         return;
@@ -90,7 +102,7 @@ export function createHandler(overrides: Partial<Dependencies> = {}) {
       const problem = error instanceof FolioError ? error : new FolioError('SERVER_ERROR', '서버 요청을 처리하지 못했습니다. 완료된 구간은 보존됩니다.', 500);
       res.statusCode = problem.status;
       if (problem.retryAfter) res.setHeader('Retry-After', String(problem.retryAfter));
-      send({ error: { code: problem.code, message: problem.message, retryAfter: problem.retryAfter } });
+      send({ error: { code: problem.code, message: problem.message, retryAfter: problem.retryAfter, retryable: problem.retryable, diagnosticId: problem.diagnosticId } });
     }
   };
 }

@@ -4,7 +4,7 @@ import type { Book } from '../domain/models';
 import { novelCache } from '../services/novelCache';
 import { geminiTranslationProvider, serverApi } from '../services/folioApi';
 import type { ServerSession } from '../services/folioApi';
-import { FolioError, GLOSSARY_VERSION, TRANSLATION_MODEL, TRANSLATION_VERSION, makeBatches, translationKey, validateTranslation } from '../../shared/novels';
+import { FolioError, GLOSSARY_VERSION, TRANSLATION_MODEL, TRANSLATION_VERSION, TRANSLATION_REQUEST_VERSION, makeBatches, translationKey, validateTranslation } from '../../shared/novels';
 import type { ImportedNovel, TranslationCache } from '../../shared/novels';
 
 function wait(ms: number, signal: AbortSignal): Promise<void> {
@@ -39,6 +39,8 @@ export function useNovelLibrary() {
   const controller = useRef<AbortController | null>(null);
   const selected = entries.find((entry) => entry.id === selectedId);
   const cache = selected ? caches[translationKey(selected)] : undefined;
+  const requestBlocked = cache?.chunks.some((chunk) => chunk.status === 'error' && chunk.retryable === false && chunk.failureVersion === TRANSLATION_REQUEST_VERSION) ?? false;
+  const blockedUntil = Math.max(retryAt, ...cache?.chunks.map((chunk) => chunk.retryAt ?? 0) ?? []);
   const complete = !!cache && cache.chunks.length > 0 && cache.chunks.every((chunk) => chunk.status === 'complete');
   const language = selected && complete ? languages[selectedId] ?? 'en' : 'en';
   const group = selected?.collection;
@@ -72,6 +74,7 @@ export function useNovelLibrary() {
             const batches = makeBatches(novel.paragraphs);
             if (saved.chunks.length === batches.length) {
               saved.chunks = saved.chunks.map((chunk, i) => {
+                if (chunk.id === batches[i].id && chunk.status === 'error') return { ...chunk, paragraphs: [] };
                 try { if (chunk.id !== batches[i].id || chunk.status !== 'complete') throw Error(); return { ...chunk, paragraphs: validateTranslation(batches[i].paragraphs, chunk.paragraphs) }; }
                 catch { return { id: batches[i].id, status: 'pending', paragraphs: [] }; }
               });
@@ -132,7 +135,7 @@ export function useNovelLibrary() {
   }
   async function refreshSession() { const state = await serverApi.session(); setSession(state); return state; }
   async function translate() {
-    if (!selected || controller.current || complete) return;
+    if (!selected || controller.current || complete || requestBlocked || blockedUntil > Date.now()) return;
     const signalController = new AbortController();
     controller.current = signalController;
     setRunning(true); setError(''); setWaiting(false);
@@ -169,7 +172,9 @@ export function useNovelLibrary() {
       if (!(problem instanceof DOMException && problem.name === 'AbortError')) {
         const message = problem instanceof Error ? problem.message : '번역을 처리하지 못했습니다.';
         if (currentIndex >= 0 && document.chunks[currentIndex].status !== 'complete') {
-          document.chunks[currentIndex] = { id: batches[currentIndex].id, status: 'error', paragraphs: [], error: message };
+          document.chunks[currentIndex] = { id: batches[currentIndex].id, status: 'error', paragraphs: [], error: message,
+            ...(problem instanceof FolioError ? { errorCode: problem.code, retryable: problem.retryable, diagnosticId: problem.diagnosticId, failureVersion: TRANSLATION_REQUEST_VERSION, ...(problem.status === 429 ? { retryAt: Date.now() + Math.max(60, problem.retryAfter) * 1000 } : {}) } : {}),
+          };
           try { await commit(); } catch { /* surface the storage error and stop further API calls */ }
         }
         setError(message);
@@ -178,5 +183,6 @@ export function useNovelLibrary() {
       }
     } finally { if (controller.current === signalController) controller.current = null; setRunning(false); setWaiting(false); }
   }
-  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, language, cache, complete, session, running, waiting, error, retryAt, add, addMany, select, activateChapter, markRead, status, setLanguage, translate, stop, refreshSession };
+  const savedError = cache?.chunks.find((chunk) => chunk.status === 'error')?.error ?? '';
+  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, language, cache, complete, session, running, waiting, error: error || savedError, retryAt: blockedUntil, requestBlocked, add, addMany, select, activateChapter, markRead, status, setLanguage, translate, stop, refreshSession };
 }

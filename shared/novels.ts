@@ -1,6 +1,8 @@
 export const TRANSLATION_MODEL = 'gemini-3.8-flash';
 export const TRANSLATION_VERSION = 'folio-literary-ko-v1';
 export const GLOSSARY_VERSION = 'rezero-ko-v1';
+// Request-only revision: do not invalidate successful translations or change batch boundaries.
+export const TRANSLATION_REQUEST_VERSION = 'simple-schema-v1';
 export interface SourceParagraph { id: string; text: string }
 export interface NovelSource {
   url: string;
@@ -35,6 +37,11 @@ export interface TranslationChunk {
   status: 'pending' | 'complete' | 'error';
   paragraphs: SourceParagraph[];
   error?: string;
+  errorCode?: string;
+  retryable?: boolean;
+  failureVersion?: string;
+  retryAt?: number;
+  diagnosticId?: string;
 }
 export interface TranslationCache {
   key: string;
@@ -52,8 +59,11 @@ export class FolioError extends Error {
   code: string;
   status: number;
   retryAfter: number;
-  constructor(code: string, message: string, status = 400, retryAfter = 0) {
+  retryable?: boolean;
+  diagnosticId?: string;
+  constructor(code: string, message: string, status = 400, retryAfter = 0, details?: { retryable?: boolean; diagnosticId?: string }) {
     super(message); this.code = code; this.status = status; this.retryAfter = retryAfter;
+    this.retryable = details?.retryable; this.diagnosticId = details?.diagnosticId;
   }
 }
 export async function sha256(text: string): Promise<string> {
