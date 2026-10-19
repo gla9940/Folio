@@ -3,6 +3,7 @@ import { sampleBook, SAMPLE_BOOK_ID } from '../data/sampleBook';
 import type { Book } from '../domain/models';
 import { novelCache } from '../services/novelCache';
 import type { ImportedNovel } from '../../shared/novels';
+import { libraryId, libraryTitle } from '../domain/library';
 
 export function novelBook(novel: ImportedNovel): Book {
   return {
@@ -14,6 +15,7 @@ export function novelBook(novel: ImportedNovel): Book {
 export function useNovelLibrary() {
   const [entries, setEntries] = useState<ImportedNovel[]>([]);
   const [selectedId, setSelectedId] = useState(SAMPLE_BOOK_ID);
+  const [titles, setTitles] = useState<Record<string, string>>({});
   const [readChapters, setReadChapters] = useState<Record<string, boolean>>({});
   const readRef = useRef<Record<string, boolean>>({});
   const [error, setError] = useState('');
@@ -22,10 +24,10 @@ export function useNovelLibrary() {
   const group = selected?.collection;
   const members = group ? entries.filter((entry) => entry.collection?.id === group.id).sort((a, b) => a.collection!.order - b.collection!.order) : selected ? [selected] : [];
   const book = selected ? {
-    ...novelBook(selected), id: group?.id ?? selected.id, title: group?.title ?? selected.title,
+    ...novelBook(selected), id: libraryId(selected), title: titles[libraryId(selected)] ?? libraryTitle(selected),
     chapters: members.flatMap((entry) => novelBook(entry).chapters),
   } : sampleBook;
-  const books = entries.filter((entry, index) => !entry.collection || entries.findIndex((other) => other.collection?.id === entry.collection!.id) === index).map((entry) => ({ id: entry.collection?.id ?? entry.id, title: entry.collection?.title ?? entry.title }));
+  const books = entries.filter((entry, index) => entries.findIndex((other) => libraryId(other) === libraryId(entry)) === index).map((entry) => ({ id: libraryId(entry), title: titles[libraryId(entry)] ?? libraryTitle(entry) }));
   const selectionId = group?.id ?? selectedId;
   const revision = members.map((entry) => `${entry.id}:${entry.source.hash}`).join('|');
   function status(entry: ImportedNovel) { return { read: !!readChapters[`${entry.id}:${entry.source.hash}`] }; }
@@ -37,8 +39,10 @@ export function useNovelLibrary() {
         const novels = await novelCache.list();
         const savedId = await novelCache.preference<string>('selected');
         const savedRead = await novelCache.preference<Record<string, boolean>>('read-chapters') ?? {};
+        const savedTitles = await novelCache.preference<Record<string, string>>('book-titles') ?? {};
         if (!active) return;
         setEntries(novels);
+        setTitles(savedTitles);
         if (savedId && novels.some((novel) => novel.id === savedId)) setSelectedId(savedId);
         readRef.current = savedRead; setReadChapters(savedRead);
       } catch (problem) { if (active) setError((problem as Error).message); }
@@ -72,5 +76,26 @@ export function useNovelLibrary() {
     setEntries((current) => [...current.filter((entry) => !ids.has(entry.id)), ...novels]);
     select(novels[0].id);
   }
-  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, error, addMany, select, activateChapter, markRead, status };
+  async function renameBook(id: string, value: string) {
+    const title = value.trim();
+    if (!title || title.length > 200) throw Error('책 제목은 1~200자로 입력해 주세요.');
+    if (!entries.some((entry) => libraryId(entry) === id)) throw Error('책을 찾을 수 없습니다.');
+    setTitles(await novelCache.renameBook(id, title));
+  }
+  async function removeBook(id: string) {
+    const targets = entries.filter((entry) => libraryId(entry) === id);
+    if (!targets.length) throw Error('책을 찾을 수 없습니다.');
+    // Opening another imported book here would rewrite its last-read timestamp.
+    const fallback = SAMPLE_BOOK_ID;
+    const keys = [...new Set([id, ...targets.map((entry) => entry.id)])].flatMap((key) => [`folio:v1:progress:${key}`, `folio:v1:bookmarks:${key}`]);
+    // Check access before committing the IndexedDB deletion. Never clear storage.
+    keys.forEach((key) => window.localStorage.getItem(key));
+    const result = await novelCache.removeBook(id, fallback);
+    setEntries((current) => current.filter((entry) => libraryId(entry) !== id));
+    setTitles(result.titles); readRef.current = result.read; setReadChapters(result.read);
+    if (targets.some((entry) => entry.id === selectedId)) setSelectedId(fallback);
+    try { keys.forEach((key) => window.localStorage.removeItem(key)); }
+    catch { throw Error('책은 삭제됐지만 기기 기록을 정리하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.'); }
+  }
+  return { ready, book, selected, selectedId, selectionId, books, members, revision, entries, error, addMany, select, activateChapter, markRead, status, renameBook, removeBook };
 }

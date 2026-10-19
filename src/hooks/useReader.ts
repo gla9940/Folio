@@ -31,6 +31,7 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
       paragraphOffset: anchor?.getBoundingClientRect().top ?? 0,
       characterOffset: anchor ? firstCharacterAt(anchor, (rect) => rect.bottom <= 100) : 0,
       readingMode: 'scroll',
+      percent: Math.min(100, Math.round(window.scrollY / Math.max(1, document.documentElement.scrollHeight - window.innerHeight) * 100)),
       updatedAt: new Date().toISOString(),
     };
     latestPosition.current = progress;
@@ -41,6 +42,7 @@ export function useReader(book: Book, storage: ReaderStorage, initialChapterId?:
     const progress: ReadingProgress = {
       bookId: book.id, chapterId, ...anchor, paragraphOffset: 120,
       scrollY: 0, readingMode: 'paged', updatedAt: new Date().toISOString(),
+      percent: progressPercent,
     };
     latestPosition.current = progress;
     setPercent(progressPercent);

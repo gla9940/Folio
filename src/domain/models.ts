@@ -33,6 +33,7 @@ export interface Book {
   chapters: Chapter[];
 }
 export interface ReadingProgress {
+  percent?: number;
   bookId: string;
   chapterId: string;
   scrollY: number;

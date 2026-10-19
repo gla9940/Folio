@@ -19,20 +19,20 @@ const storage = createLocalReaderStorage();
 
 export function App() {
   const library = useNovelLibrary();
+  const [libraryTab, setLibraryTab] = useState<'books' | 'file' | null>(null);
   if (!library.ready) return <main className="loading-state" translate="no" lang="ko"><span className="wordmark">Folio<span>.</span></span><p>이야기를 펼치고 있어요.</p></main>;
-  return <Reader key={`${library.book.id}:${library.revision}`} library={library} />;
+  return <><Reader key={`${library.book.id}:${library.revision}`} library={library} libraryOpen={libraryTab !== null} onOpenLibrary={setLibraryTab} />{libraryTab && <LibraryDialog library={library} initialTab={libraryTab} onClose={() => setLibraryTab(null)} />}</>;
 }
 
-function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
+function Reader({ library, libraryOpen, onOpenLibrary }: { library: ReturnType<typeof useNovelLibrary>; libraryOpen: boolean; onOpenLibrary: (tab: 'books' | 'file') => void }) {
   const book = library.book;
   const reader = useReader(book, storage, library.selected?.chapterId);
-  const [libraryOpen, setLibraryOpen] = useState(false);
   const [panel, setPanel] = useState<'contents' | 'settings' | null>(null);
   const [tab, setTab] = useState<'contents' | 'bookmarks'>('contents');
   const [menusVisible, setMenusVisible] = useState(true);
   const [announcement, setAnnouncement] = useState('');
   const closePanel = useCallback(() => setPanel(null), []);
-  const openLibrary = () => { closePanel(); setLibraryOpen(true); };
+  const openLibrary = (tab: 'books' | 'file') => { reader.capturePosition(); closePanel(); onOpenLibrary(tab); };
   const { chapter, chapterIndex, settings, bookmarks } = reader;
   const paged = settings.readingMode === 'paged';
   const pageController = useRef<PageController>(null);
@@ -82,7 +82,7 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
     </header>
 
     <SidePanel side="left" open={panel === 'contents'} title="내 서재" onClose={closePanel}>
-      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} chapterStates={Object.fromEntries(library.members.map((entry) => [entry.chapterId, { ...library.status(entry), url: entry.source.url.startsWith('https://') ? entry.source.url : undefined }]))} library={{ selectedId: library.selectionId, entries: [{ id: SAMPLE_BOOK_ID, title: `샘플 · ${sampleBook.title}` }, ...library.books], onSelect: (id) => { reader.capturePosition(); library.select(id); closePanel(); }, onOpen: openLibrary }} />
+      <Contents book={book} chapterId={chapter.id} bookmarks={bookmarks} tab={tab} setTab={setTab} onNavigate={navigate} onRemoveBookmark={removeBookmark} chapterStates={Object.fromEntries(library.members.map((entry) => [entry.chapterId, { ...library.status(entry), url: entry.source.url.startsWith('https://') ? entry.source.url : undefined }]))} library={{ selectedId: library.selectionId, entries: [{ id: SAMPLE_BOOK_ID, title: `샘플 · ${sampleBook.title}` }, ...library.books], onSelect: (id) => { reader.capturePosition(); library.select(id); closePanel(); }, onOpen: () => openLibrary('file'), onManage: () => openLibrary('books') }} />
     </SidePanel>
 
     <main className={`reading-main ${paged ? 'paged-main' : ''}`} inert={panel !== null} onClick={(event) => {
@@ -122,6 +122,5 @@ function Reader({ library }: { library: ReturnType<typeof useNovelLibrary> }) {
     <div className={`toast notranslate ${announcement ? 'visible' : ''}`} translate="no" lang="ko" role="status">{announcement}</div>
     {reader.storageError && <div className="storage-warning notranslate" translate="no" lang="ko" role="alert">기기 저장 공간 또는 브라우저 설정을 확인해 주세요. 현재 변경 사항은 새로고침하면 사라질 수 있어요.</div>}
     {library.error && <div className="library-storage-error notranslate" translate="no" lang="ko" role="alert">{library.error}</div>}
-    {libraryOpen && <LibraryDialog library={library} onClose={() => setLibraryOpen(false)} />}
   </div>;
 }

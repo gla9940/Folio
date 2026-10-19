@@ -37,6 +37,7 @@ export function createLocalReaderStorage(getStorage: () => Storage = () => windo
         characterOffset: Math.floor(bounded(value.characterOffset, 0, 0, 10_000_000)),
         readingMode: value.readingMode === 'paged' ? 'paged' : 'scroll',
         updatedAt: value.updatedAt,
+        ...(typeof value.percent === 'number' ? { percent: bounded(value.percent, 0, 0, 100) } : {}),
         ...(value.atChapterEnd === true ? { atChapterEnd: true } : {}),
       } satisfies ReadingProgress;
     },
